@@ -8,7 +8,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 20px auto;
             padding: 0 20px;
         }
@@ -173,86 +173,63 @@
             const startDate = new Date(document.getElementById('startDate').value);
             const monthlyMeanSales = parseInt(document.getElementById('monthlyMeanSales').value);
 
-            // 初始库存
-            let inventory = {
-                '0-90': parseInt(document.getElementById('age0_90').value),
-                '91-180': parseInt(document.getElementById('age91_180').value),
-                '181-270': parseInt(document.getElementById('age181_270').value),
-                '271-365': parseInt(document.getElementById('age271_365').value),
-                '365+': parseInt(document.getElementById('age365plus').value)
-            };
+            // 初始库存数组，每个元素代表一个30天的区间
+            // 例如：index 0-2 代表0-90天，3-5代表91-180天，以此类推
+            let inventoryArray = new Array(13).fill(0); // 0-365+天，每30天一个区间
+            
+            // 将输入的库存分配到30天区间
+            let initial0_90 = parseInt(document.getElementById('age0_90').value);
+            let initial91_180 = parseInt(document.getElementById('age91_180').value);
+            let initial181_270 = parseInt(document.getElementById('age181_270').value);
+            let initial271_365 = parseInt(document.getElementById('age271_365').value);
+            let initial365plus = parseInt(document.getElementById('age365plus').value);
+
+            // 平均分配到各个30天区间
+            for(let i = 0; i < 3; i++) inventoryArray[i] = Math.floor(initial0_90 / 3);
+            for(let i = 3; i < 6; i++) inventoryArray[i] = Math.floor(initial91_180 / 3);
+            for(let i = 6; i < 9; i++) inventoryArray[i] = Math.floor(initial181_270 / 3);
+            for(let i = 9; i < 12; i++) inventoryArray[i] = Math.floor(initial271_365 / 3);
+            inventoryArray[12] = initial365plus;
 
             const tbody = document.getElementById('feeTableBody');
             tbody.innerHTML = '';
 
             let currentDate = new Date(startDate);
-            let totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
             let totalMonthlyFees = 0;
             let totalAgedFees = 0;
 
-            // 记录每个库存批次的具体年龄（以天计）
-            let inventoryAges = {};
-            for (let age in inventory) {
-                if (inventory[age] > 0) {
-                    let baseDays;
-                    switch (age) {
-                        case '0-90': baseDays = 45; break;
-                        case '91-180': baseDays = 135; break;
-                        case '181-270': baseDays = 225; break;
-                        case '271-365': baseDays = 318; break;
-                        case '365+': baseDays = 366; break;
-                    }
-                    inventoryAges[age] = baseDays;
-                }
-            }
-
-            while (totalInventory > 0) {
+            while (inventoryArray.reduce((a, b) => a + b, 0) > 0) {
                 const baseRate = getBaseStorageRate(currentDate);
                 let monthlyFee = 0;
                 let agedSurchargeFee = 0;
-                let ageDistributionText = '';
 
-                // 根据实际天数重新计算库存分布
-                let currentInventory = {
-                    '0-90': 0,
-                    '91-180': 0,
-                    '181-270': 0,
-                    '271-365': 0,
-                    '365+': 0
+                // 计算当前库存分布
+                let currentDistribution = {
+                    '0-90': inventoryArray.slice(0, 3).reduce((a, b) => a + b, 0),
+                    '91-180': inventoryArray.slice(3, 6).reduce((a, b) => a + b, 0),
+                    '181-270': inventoryArray.slice(6, 9).reduce((a, b) => a + b, 0),
+                    '271-365': inventoryArray.slice(9, 12).reduce((a, b) => a + b, 0),
+                    '365+': inventoryArray[12]
                 };
 
-                // 更新每个库存批次的年龄并重新分类
-                for (let age in inventory) {
-                    if (inventory[age] > 0) {
-                        let currentAge = inventoryAges[age];
-                        // 确定新的年龄区间
-                        let newCategory;
-                        if (currentAge <= 90) newCategory = '0-90';
-                        else if (currentAge <= 180) newCategory = '91-180';
-                        else if (currentAge <= 270) newCategory = '181-270';
-                        else if (currentAge <= 365) newCategory = '271-365';
-                        else newCategory = '365+';
+                let totalInventory = Object.values(currentDistribution).reduce((a, b) => a + b, 0);
+                let ageDistributionText = Object.entries(currentDistribution)
+                    .map(([age, qty]) => `${age}: ${qty}件`)
+                    .join(' ');
 
-                        currentInventory[newCategory] += inventory[age];
-
-                        // 计算该批次的费用
-                        monthlyFee += volume * inventory[age] * baseRate;
-                        agedSurchargeFee += volume * inventory[age] * getAgedSurchargeRate(currentAge, currentDate);
-
-                        // 更新年龄文本
-                        ageDistributionText += `${newCategory}: ${inventory[age]}件 `;
-
-                        // 增加年龄
-                        inventoryAges[age] += 30; // 假设每月30天
+                // 计算费用
+                for(let i = 0; i < inventoryArray.length; i++) {
+                    if(inventoryArray[i] > 0) {
+                        let daysAge = i * 30 + 15; // 使用区间中点
+                        monthlyFee += volume * inventoryArray[i] * baseRate;
+                        agedSurchargeFee += volume * inventoryArray[i] * getAgedSurchargeRate(daysAge, currentDate);
                     }
                 }
-
-                // 更新库存对象
-                inventory = { ...currentInventory };
 
                 totalMonthlyFees += monthlyFee;
                 totalAgedFees += agedSurchargeFee;
 
+                // 添加行
                 const row = tbody.insertRow();
                 row.insertCell(0).textContent = currentDate.toLocaleString('default', { year: 'numeric', month: 'long' });
                 row.insertCell(1).textContent = totalInventory;
@@ -261,20 +238,18 @@
                 row.insertCell(4).textContent = `$${agedSurchargeFee.toFixed(2)}`;
                 row.insertCell(5).textContent = `$${(monthlyFee + agedSurchargeFee).toFixed(2)}`;
 
-                // 减去销售的数量（从最老的库存开始减）
-                const remainingSales = Math.min(monthlyMeanSales, totalInventory);
-                let salesToAllocate = remainingSales;
-                const categories = ['365+', '271-365', '181-270', '91-180', '0-90'];
-                for (let category of categories) {
-                    if (salesToAllocate <= 0) break;
-                    const deduction = Math.min(inventory[category], salesToAllocate);
-                    inventory[category] -= deduction;
-                    salesToAllocate -= deduction;
+                // 处理销售
+                let remainingSales = Math.min(monthlyMeanSales, totalInventory);
+                for(let i = inventoryArray.length - 1; i >= 0 && remainingSales > 0; i--) {
+                    let deduction = Math.min(inventoryArray[i], remainingSales);
+                    inventoryArray[i] -= deduction;
+                    remainingSales -= deduction;
                 }
 
-                totalInventory -= remainingSales;
+                // 库存变老（向右移动）
+                inventoryArray = [0, ...inventoryArray.slice(0, -1)];
+                
                 currentDate.setMonth(currentDate.getMonth() + 1);
-
                 if (tbody.rows.length > 24) break;
             }
 
