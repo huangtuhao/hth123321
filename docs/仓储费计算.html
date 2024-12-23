@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel表格合并工具</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <title>亚马逊仓储费用计算器</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,328 +12,277 @@
             margin: 20px auto;
             padding: 0 20px;
         }
-        .container {
-            background-color: #f5f5f5;
-            padding: 20px;
-            border-radius: 8px;
-        }
-        .file-list {
+
+        .input-section,
+        .result-section {
             margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
-        .file-item {
-            background-color: #fff;
-            padding: 10px;
+
+        .input-group {
             margin: 10px 0;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
-        select {
+
+        label {
+            display: inline-block;
+            width: 200px;
+            margin-right: 10px;
+        }
+
+        input {
             padding: 5px;
-            margin: 5px;
+            width: 150px;
         }
+
+        .age-distribution {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
         button {
-            background-color: #4CAF50;
-            color: white;
+            margin: 20px 0;
             padding: 10px 20px;
+            background-color: #0066c0;
+            color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 5px;
             cursor: pointer;
-            margin: 5px;
         }
-        button:hover {
-            background-color: #45a049;
-        }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
-        #result {
-            margin-top: 20px;
-            overflow-x: auto;
-        }
+
         table {
-            border-collapse: collapse;
             width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
         }
-        th, td {
+
+        th,
+        td {
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
         }
+
         th {
-            background-color: #4CAF50;
-            color: white;
+            background-color: #f2f2f2;
         }
-        .file-info {
-            flex: 1;
-            margin-right: 10px;
-        }
-        .status {
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
-        #log {
-            margin-top: 10px;
-            padding: 10px;
+
+        tfoot td {
+            font-weight: bold;
             background-color: #f8f8f8;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            display: none;
         }
     </style>
 </head>
+
 <body>
-    <div class="container">
-        <h2>Excel表格合并工具</h2>
-        <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
-        <div class="file-list" id="fileList"></div>
-        <button onclick="mergeFiles()">合并文件</button>
-        <button onclick="exportExcel()" id="exportBtn" style="display: none;">导出Excel</button>
-        <div id="log"></div>
-        <div id="result"></div>
+    <h1>亚马逊仓储费用计算器</h1>
+
+    <div class="input-section">
+        <h2>基本信息</h2>
+        <div class="input-group">
+            <label>商品体积（立方英寸）：</label>
+            <input type="number" id="volume" value="114.171" step="0.001">
+        </div>
+        <div class="input-group">
+            <label>当前日期：</label>
+            <input type="date" id="startDate" value="2024-12-14">
+        </div>
+        <div class="input-group">
+            <label>预计月均销量：</label>
+            <input type="number" id="monthlyMeanSales">
+        </div>
+
+        <h3>库存年龄分布（件）</h3>
+        <div class="age-distribution">
+            <div class="input-group">
+                <label>0-90天：</label>
+                <input type="number" id="age0_90" value="9251">
+            </div>
+            <div class="input-group">
+                <label>91-180天：</label>
+                <input type="number" id="age91_180" value="0">
+            </div>
+            <div class="input-group">
+                <label>181-270天：</label>
+                <input type="number" id="age181_270" value="0">
+            </div>
+            <div class="input-group">
+                <label>271-365天：</label>
+                <input type="number" id="age271_365" value="0">
+            </div>
+            <div class="input-group">
+                <label>365天以上：</label>
+                <input type="number" id="age365plus" value="0">
+            </div>
+        </div>
+
+        <button onclick="calculateFees()">计算费用</button>
+    </div>
+
+    <div class="result-section">
+        <h2>费用预估</h2>
+        <table id="feeTable">
+            <thead>
+                <tr>
+                    <th>月份</th>
+                    <th>预计库存</th>
+                    <th>库龄分布</th>
+                    <th>月度仓储费</th>
+                    <th>超龄库存附加费</th>
+                    <th>总费用</th>
+                </tr>
+            </thead>
+            <tbody id="feeTableBody">
+            </tbody>
+            <tfoot>
+                <tr id="totalRow">
+                    <td colspan="3"><strong>总计</strong></td>
+                    <td id="totalMonthlyFee"><strong>$0.00</strong></td>
+                    <td id="totalAgedFee"><strong>$0.00</strong></td>
+                    <td id="grandTotal"><strong>$0.00</strong></td>
+                </tr>
+            </tfoot>
+        </table>
     </div>
 
     <script>
-        let files = [];
-        let mergedData = null;
+        function getBaseStorageRate(date) {
+            const month = date.getMonth();
+            return (month >= 9 && month <= 11) ? 2.40 : 0.78; // 10-12月为旺季
+        }
 
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const newFiles = Array.from(e.target.files);
-            files = [...files, ...newFiles];
-            updateFileList();
-        });
+        function getAgedSurchargeRate(daysAge, date) {
+            const isAfterFeb2024 = date > new Date('2024-02-15');
 
-        function updateFileList() {
-            const fileList = document.getElementById('fileList');
-            fileList.innerHTML = '';
-            
-            files.forEach((file, index) => {
-                const fileItem = document.createElement('div');
-                fileItem.className = 'file-item';
-                
-                const fileInfo = document.createElement('div');
-                fileInfo.className = 'file-info';
-                
-                const fileName = document.createElement('div');
-                fileName.textContent = `${index + 1}. ${file.name}`;
-                fileInfo.appendChild(fileName);
-                
-                const status = document.createElement('div');
-                status.className = 'status';
-                fileInfo.appendChild(status);
-                
-                const controls = document.createElement('div');
-                
-                if (index === 0) {
-                    const select = document.createElement('select');
-                    select.id = `select-${index}`;
-                    select.innerHTML = '<option value="">请选择索引列</option>';
-                    
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                        
-                        if (jsonData.length > 0) {
-                            const headers = jsonData[0];
-                            headers.forEach((header, i) => {
-                                const option = document.createElement('option');
-                                option.value = i;
-                                option.textContent = header;
-                                select.appendChild(option);
-                            });
-                        }
-                    };
-                    reader.readAsArrayBuffer(file);
-                    
-                    controls.appendChild(select);
-                } else {
-                    status.textContent = '将自动匹配索引列';
+            if (daysAge <= 180) return 0;
+
+            if (daysAge <= 210) return 0.50;
+            if (daysAge <= 240) return 1.00;
+            if (daysAge <= 270) return 1.50;
+            if (daysAge <= 300) return isAfterFeb2024 ? 5.45 : 3.80;
+            if (daysAge <= 330) return isAfterFeb2024 ? 5.70 : 4.00;
+            if (daysAge <= 365) return isAfterFeb2024 ? 5.90 : 4.20;
+            return 6.90;
+        }
+
+        function calculateFees() {
+            const volume = parseFloat(document.getElementById('volume').value) / 1728;
+            const startDate = new Date(document.getElementById('startDate').value);
+            const monthlyMeanSales = parseInt(document.getElementById('monthlyMeanSales').value);
+
+            // 初始库存
+            let inventory = {
+                '0-90': parseInt(document.getElementById('age0_90').value),
+                '91-180': parseInt(document.getElementById('age91_180').value),
+                '181-270': parseInt(document.getElementById('age181_270').value),
+                '271-365': parseInt(document.getElementById('age271_365').value),
+                '365+': parseInt(document.getElementById('age365plus').value)
+            };
+
+            const tbody = document.getElementById('feeTableBody');
+            tbody.innerHTML = '';
+
+            let currentDate = new Date(startDate);
+            let totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
+            let totalMonthlyFees = 0;
+            let totalAgedFees = 0;
+
+            // 记录每个库存批次的具体年龄（以天计）
+            let inventoryAges = {};
+            for (let age in inventory) {
+                if (inventory[age] > 0) {
+                    let baseDays;
+                    switch (age) {
+                        case '0-90': baseDays = 45; break;
+                        case '91-180': baseDays = 135; break;
+                        case '181-270': baseDays = 225; break;
+                        case '271-365': baseDays = 318; break;
+                        case '365+': baseDays = 366; break;
+                    }
+                    inventoryAges[age] = baseDays;
                 }
-                
-                const removeBtn = document.createElement('button');
-                removeBtn.textContent = '删除';
-                removeBtn.onclick = () => removeFile(index);
-                controls.appendChild(removeBtn);
-                
-                fileItem.appendChild(fileInfo);
-                fileItem.appendChild(controls);
-                fileList.appendChild(fileItem);
-            });
-        }
-
-        function removeFile(index) {
-            files.splice(index, 1);
-            updateFileList();
-        }
-
-        function log(message) {
-            const logDiv = document.getElementById('log');
-            logDiv.style.display = 'block';
-            logDiv.innerHTML += message + '<br>';
-        }
-
-        async function mergeFiles() {
-            if (files.length < 2) {
-                alert('请至少上传两个文件');
-                return;
             }
 
-            const baseIndexCol = document.getElementById('select-0').value;
-            if (!baseIndexCol) {
-                alert('请为第一个文件选择索引列');
-                return;
-            }
+            while (totalInventory > 0) {
+                const baseRate = getBaseStorageRate(currentDate);
+                let monthlyFee = 0;
+                let agedSurchargeFee = 0;
+                let ageDistributionText = '';
 
-            document.getElementById('log').innerHTML = '';
-            try {
-                // 读取第一个文件
-                const baseFileData = await readExcelFile(files[0]);
-                const baseHeaders = baseFileData[0];
-                const baseRows = baseFileData.slice(1);
-                const indexColumnName = baseHeaders[baseIndexCol];
-
-                log(`使用 "${indexColumnName}" 作为索引列`);
-
-                // 创建索引映射，使用Map存储所有数据
-                const mergedDataMap = new Map();
-                
-                // 初始化基础数据
-                baseRows.forEach(row => {
-                    const indexValue = row[baseIndexCol];
-                    if (indexValue != null && indexValue !== '') {
-                        const rowData = {};
-                        baseHeaders.forEach((header, i) => {
-                            rowData[header] = row[i];
-                        });
-                        mergedDataMap.set(String(indexValue), rowData);
-                    }
-                });
-
-                log(`基础表格包含 ${mergedDataMap.size} 行数据`);
-
-                // 用于跟踪所有出现的列名
-                const allHeaders = new Set(baseHeaders);
-
-                // 合并其他文件
-                for (let i = 1; i < files.length; i++) {
-                    const currentData = await readExcelFile(files[i]);
-                    const currentHeaders = currentData[0];
-                    const currentRows = currentData.slice(1);
-
-                    // 查找匹配的索引列
-                    const currentIndexCol = currentHeaders.indexOf(indexColumnName);
-                    if (currentIndexCol === -1) {
-                        log(`警告：跳过文件 ${files[i].name}，未找到匹配的索引列 "${indexColumnName}"`);
-                        continue;
-                    }
-
-                    log(`处理文件 ${files[i].name}`);
-                    let matchCount = 0;
-
-                    // 合并数据
-                    currentRows.forEach((row, rowIndex) => {
-                        const indexValue = row[currentIndexCol];
-                        if (indexValue != null && indexValue !== '') {
-                            const stringIndex = String(indexValue);
-                            let rowData = mergedDataMap.get(stringIndex) || {};
-
-                            // 添加或更新数据
-                            currentHeaders.forEach((header, headerIndex) => {
-                                if (headerIndex !== currentIndexCol) {
-                                    rowData[header] = row[headerIndex];
-                                    allHeaders.add(header);
-                                }
-                            });
-
-                            if (!mergedDataMap.has(stringIndex)) {
-                                // 如果是新行，确保包含基础表格的所有列
-                                baseHeaders.forEach(header => {
-                                    if (!(header in rowData)) {
-                                        rowData[header] = '';
-                                    }
-                                });
-                            }
-
-                            mergedDataMap.set(stringIndex, rowData);
-                            matchCount++;
-                        }
-                    });
-
-                    log(`文件 ${files[i].name} 匹配到 ${matchCount} 行数据`);
-                }
-
-                // 构建最终的合并数据
-                const finalHeaders = Array.from(allHeaders);
-                const finalRows = Array.from(mergedDataMap.values()).map(rowData => {
-                    return finalHeaders.map(header => rowData[header] || '');
-                });
-
-                mergedData = [finalHeaders, ...finalRows];
-                log(`合并完成，总共 ${finalRows.length} 行数据`);
-
-                // 显示预览
-                displayResult(mergedData);
-                document.getElementById('exportBtn').style.display = 'inline-block';
-            } catch (error) {
-                alert('处理文件时出错：' + error.message);
-                log('错误：' + error.message);
-            }
-        }
-
-        function readExcelFile(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-                        resolve(jsonData);
-                    } catch (error) {
-                        reject(new Error(`处理文件 ${file.name} 时出错：${error.message}`));
-                    }
+                // 根据实际天数重新计算库存分布
+                let currentInventory = {
+                    '0-90': 0,
+                    '91-180': 0,
+                    '181-270': 0,
+                    '271-365': 0,
+                    '365+': 0
                 };
-                reader.onerror = () => reject(new Error(`读取文件 ${file.name} 失败`));
-                reader.readAsArrayBuffer(file);
-            });
-        }
 
-        function displayResult(data) {
-            const resultDiv = document.getElementById('result');
-            const table = document.createElement('table');
-            
-            data.forEach((row, rowIndex) => {
-                const tr = document.createElement('tr');
-                row.forEach(cell => {
-                    const td = document.createElement(rowIndex === 0 ? 'th' : 'td');
-                    td.textContent = cell ?? '';
-                    tr.appendChild(td);
-                });
-                table.appendChild(tr);
-            });
-            
-            resultDiv.innerHTML = '';
-            resultDiv.appendChild(table);
-        }
+                // 更新每个库存批次的年龄并重新分类
+                for (let age in inventory) {
+                    if (inventory[age] > 0) {
+                        let currentAge = inventoryAges[age];
+                        // 确定新的年龄区间
+                        let newCategory;
+                        if (currentAge <= 90) newCategory = '0-90';
+                        else if (currentAge <= 180) newCategory = '91-180';
+                        else if (currentAge <= 270) newCategory = '181-270';
+                        else if (currentAge <= 365) newCategory = '271-365';
+                        else newCategory = '365+';
 
-        function exportExcel() {
-            if (!mergedData) {
-                alert('请先合并文件');
-                return;
+                        currentInventory[newCategory] += inventory[age];
+
+                        // 计算该批次的费用
+                        monthlyFee += volume * inventory[age] * baseRate;
+                        agedSurchargeFee += volume * inventory[age] * getAgedSurchargeRate(currentAge, currentDate);
+
+                        // 更新年龄文本
+                        ageDistributionText += `${newCategory}: ${inventory[age]}件 `;
+
+                        // 增加年龄
+                        inventoryAges[age] += 30; // 假设每月30天
+                    }
+                }
+
+                // 更新库存对象
+                inventory = { ...currentInventory };
+
+                totalMonthlyFees += monthlyFee;
+                totalAgedFees += agedSurchargeFee;
+
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = currentDate.toLocaleString('default', { year: 'numeric', month: 'long' });
+                row.insertCell(1).textContent = totalInventory;
+                row.insertCell(2).textContent = ageDistributionText;
+                row.insertCell(3).textContent = `$${monthlyFee.toFixed(2)}`;
+                row.insertCell(4).textContent = `$${agedSurchargeFee.toFixed(2)}`;
+                row.insertCell(5).textContent = `$${(monthlyFee + agedSurchargeFee).toFixed(2)}`;
+
+                // 减去销售的数量（从最老的库存开始减）
+                const remainingSales = Math.min(monthlyMeanSales, totalInventory);
+                let salesToAllocate = remainingSales;
+                const categories = ['365+', '271-365', '181-270', '91-180', '0-90'];
+                for (let category of categories) {
+                    if (salesToAllocate <= 0) break;
+                    const deduction = Math.min(inventory[category], salesToAllocate);
+                    inventory[category] -= deduction;
+                    salesToAllocate -= deduction;
+                }
+
+                totalInventory -= remainingSales;
+                currentDate.setMonth(currentDate.getMonth() + 1);
+
+                if (tbody.rows.length > 24) break;
             }
 
-            const ws = XLSX.utils.aoa_to_sheet(mergedData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Merged Data');
-            XLSX.writeFile(wb, 'merged_data.xlsx');
+            document.getElementById('totalMonthlyFee').innerHTML = `<strong>$${totalMonthlyFees.toFixed(2)}</strong>`;
+            document.getElementById('totalAgedFee').innerHTML = `<strong>$${totalAgedFees.toFixed(2)}</strong>`;
+            document.getElementById('grandTotal').innerHTML = `<strong>$${(totalMonthlyFees + totalAgedFees).toFixed(2)}</strong>`;
         }
     </script>
 </body>
+
 </html>
