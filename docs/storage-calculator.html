@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>亚马逊仓储费计算器</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        /* 自定义滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(300px, 1fr));
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .input-section, .shipment-section, .result-section, .history-section {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow-y: auto;
+            max-height: 100%;
+            box-sizing: border-box;
+            min-width: 300px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .inventory-entries {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .inventory-entry {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .shipment-entries {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .shipment-entry {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        #results {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .age-input-section {
+            margin-bottom: 20px;
+        }
+        .age-input-section textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+        .inventory-entry.header {
+            font-weight: bold;
+            background-color: #f5f5f5;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .inventory-entry {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+            padding: 5px 0;
+        }
+        
+        .rate-input {
+            background-color: #f5f5f5;
+        }
+        
+        .calculate-btn {
+            width: 100%;
+            margin-top: 20px;
+            padding: 15px;
+            font-size: 16px;
+        }
+        
+        .shipment-entry {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .inventory-entry.total {
+            margin-top: 10px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+            font-weight: bold;
+        }
+        
+        .inventory-entry.total input {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .result-header h2 {
+            margin: 0;
+        }
+
+        .result-header .calculate-btn {
+            margin: 0;
+            padding: 10px 20px;
+        }
+
+        .total-cost {
+            color: red;
+            font-weight: bold;
+        }
+
+        .delete-btn {
+            background-color: #ff4444;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .delete-btn:hover {
+            background-color: #cc0000;
+        }
+
+        .history-section {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow-y: auto;
+            max-height: 100%;
+            box-sizing: border-box;
+        }
+
+        .history-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .history-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .history-item .timestamp {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .history-item .summary {
+            font-size: 0.9em;
+        }
+
+        .clear-history {
+            background-color: #ff4444;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        .history-item .content {
+            flex: 1;
+        }
+
+        .history-item .delete-history {
+            background: none;
+            border: none;
+            color: #ff4444;
+            padding: 0 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 10px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .history-item:hover .delete-history {
+            opacity: 1;
+        }
+
+        .history-item .delete-history:hover {
+            color: #cc0000;
+        }
+
+        .batch-input {
+            margin: 10px 0;
+        }
+
+        .batch-input textarea {
+            width: 100%;
+            height: 50px;
+            margin-bottom: 5px;
+            padding: 5px;
+        }
+
+        .batch-input .hint {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>亚马逊仓储费计算器</h1>
+    
+    <div class="container">
+        <div class="input-section">
+            <div class="input-group">
+                <label>产品尺寸：</label>
+                <input type="number" id="productSize" step="0.01">
+                <select id="sizeUnit">
+                    <option value="in3" selected>立方英寸</option>
+                    <option value="ft3">立方英尺</option>
+                </select>
+                <input type="hidden" id="totalQty">
+            </div>
+
+            <div class="age-input-section">
+                <label>粘贴亚马逊库龄详情：</label>
+                <textarea id="ageDetailsInput" placeholder="请粘贴亚马逊后台的库龄详情..."></textarea>
+                <button onclick="parseAgeDetails()">解析库龄信息</button>
+            </div>
+
+            <div class="input-group">
+                <label>库龄信息：</label>
+                <div id="inventoryEntries" class="inventory-entries">
+                    <!-- 库龄信息将通过解析填充 -->
+                </div>
+            </div>
+        </div>
+
+        <div class="shipment-section">
+            <div class="input-group">
+                <label>出货计划：</label>
+                <div class="batch-input">
+                    <div class="hint">批量添加出货计划（用空格或制表符分隔数量，需要先有第一个月的出货计划）：</div>
+                    <textarea id="batchShipment" placeholder="例如: 300 300 300 250 250..."></textarea>
+                    <button onclick="addBatchShipments()">批量添加</button>
+                </div>
+                <div id="shipmentEntries" class="shipment-entries">
+                    <div class="shipment-entry">
+                        <input type="month" placeholder="年月">
+                        <input type="number" placeholder="计划出货量">
+                        <button class="delete-btn" onclick="removeShipmentEntry(this)" style="display: none;">×</button>
+                    </div>
+                </div>
+                <button onclick="addShipmentEntry()">添加出货计划</button>
+            </div>
+        </div>
+
+        <div class="result-section">
+            <div class="result-header">
+                <h2>计算结果</h2>
+                <button onclick="calculate()" class="calculate-btn">计算仓储费</button>
+            </div>
+            <div id="results"></div>
+        </div>
+
+        <div class="history-section">
+            <h2>历史记录</h2>
+            <button class="clear-history" onclick="clearHistory()">清除历史</button>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script src="t2.js"></script>
+    <script>
+        // 默认费率配置
+        const DEFAULT_RATES = {
+            '181-210': 0.5,
+            '211-240': 1.0,
+            '241-270': 1.5,
+            '271-300': 3.8,
+            '301-330': 4.0,
+            '331-365': 4.2,
+            '365+': 6.9
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setDefaultRates();
+            updateHistoryList();
+        });
+
+        function setDefaultRates() {
+            // 创建默认的库龄信息表格
+            const container = document.getElementById('inventoryEntries');
+            if (!container.children.length) {  // 只在没有内容时初始化
+                const tableHeader = document.createElement('div');
+                tableHeader.className = 'inventory-entry header';
+                tableHeader.innerHTML = `
+                    <div>库龄区间</div>
+                    <div>数量</div>
+                    <div>费率($/月)</div>
+                `;
+                container.appendChild(tableHeader);
+                
+                const ageRanges = [
+                    '0-30', '31-60', '61-90',
+                    '91-120', '121-150', '151-180',
+                    '181-210', '211-240', '241-270',
+                    '271-300', '301-330', '331-365',
+                    '365+'
+                ];
+                
+                ageRanges.forEach(range => {
+                    const entry = document.createElement('div');
+                    entry.className = 'inventory-entry';
+                    entry.innerHTML = `
+                        <div>${range}天</div>
+                        <input type="number" value="0" class="qty-input">
+                        <input type="number" value="${DEFAULT_RATES[range] || 0}" step="0.1" readonly class="rate-input">
+                    `;
+                    container.appendChild(entry);
+                });
+
+                // 添加总计行
+                const totalRow = document.createElement('div');
+                totalRow.className = 'inventory-entry total';
+                totalRow.innerHTML = `
+                    <div>总计</div>
+                    <input type="number" value="0" readonly>
+                    <div></div>
+                `;
+                container.appendChild(totalRow);
+            }
+        }
+
+        // 添加自动计算总数的功能
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('qty-input')) {
+                updateTotalQuantity();
+            }
+        });
+
+        function updateTotalQuantity() {
+            let totalInventory = 0;
+            document.querySelectorAll('.inventory-entry:not(.header):not(.total) .qty-input').forEach(input => {
+                totalInventory += parseInt(input.value) || 0;
+            });
+            
+            // 更新总计行
+            const totalInput = document.querySelector('.inventory-entry.total input');
+            totalInput.value = totalInventory;
+            
+            // 更新隐藏的总数字段
+            document.getElementById('totalQty').value = totalInventory;
+        }
+
+        function addInventoryEntry() {
+            const template = document.querySelector('.inventory-entry').cloneNode(true);
+            const select = template.querySelector('select');
+            const rateInput = template.querySelectorAll('input')[1];
+            rateInput.value = DEFAULT_RATES[select.value];
+            
+            select.addEventListener('change', function() {
+                rateInput.value = DEFAULT_RATES[this.value];
+            });
+            
+            document.getElementById('inventoryEntries').appendChild(template);
+        }
+
+        function addShipmentEntry() {
+            const container = document.getElementById('shipmentEntries');
+            const template = container.querySelector('.shipment-entry').cloneNode(true);
+            
+            container.querySelectorAll('.delete-btn').forEach(btn => btn.style.display = 'block');
+            
+            const lastEntry = container.querySelector('.shipment-entry:last-child');
+            if (lastEntry) {
+                const lastMonth = lastEntry.querySelector('input[type="month"]').value;
+                const lastQty = lastEntry.querySelector('input[type="number"]').value;
+                
+                if (lastMonth) {
+                    const [year, month] = lastMonth.split('-').map(Number);
+                    let nextYear = year;
+                    let nextMonth = month + 1;
+                    
+                    if (nextMonth > 12) {
+                        nextYear++;
+                        nextMonth = 1;
+                    }
+                    
+                    const nextMonthStr = nextMonth.toString().padStart(2, '0');
+                    template.querySelector('input[type="month"]').value = `${nextYear}-${nextMonthStr}`;
+                    template.querySelector('input[type="number"]').value = lastQty;
+                }
+            }
+            
+            container.appendChild(template);
+        }
+
+        function parseAgeDetails() {
+            const text = document.getElementById('ageDetailsInput').value;
+            const container = document.getElementById('inventoryEntries');
+            
+            // 找到所有数量输入框
+            const qtyInputs = container.querySelectorAll('.qty-input');
+            // 重置所有数量为0
+            qtyInputs.forEach(input => input.value = '0');
+            
+            const totalMatch = text.match(/总额\*\s*([\d,]+)\s*件/);
+            if (totalMatch) {
+                const totalQty = parseInt(totalMatch[1].replace(/,/g, ''));
+                document.getElementById('totalQty').value = totalQty;
+            }
+            
+            const ageRanges = [
+                '0-30', '31-60', '61-90',
+                '91-120', '121-150', '151-180',
+                '181-210', '211-240', '241-270',
+                '271-300', '301-330', '331-365',
+                '365+'
+            ];
+            
+            ageRanges.forEach((range, index) => {
+                let regex;
+                if (range === '365+') {
+                    regex = new RegExp(`365\\+\\s*天\\n([\\d,]+)\\s*件`, 'm');
+                } else {
+                    regex = new RegExp(`${range}\\s*天\\n([\\d,]+)\\s*件`, 'm');
+                }
+                
+                const match = text.match(regex);
+                const qty = match ? parseInt(match[1].replace(/,/g, '')) : 0;
+                
+                qtyInputs[index].value = qty;
+            });
+            
+            // 更新总数
+            updateTotalQuantity();
+        }
+
+        function getFormData() {
+            let size = parseFloat(document.getElementById('productSize').value);
+            const unit = document.getElementById('sizeUnit').value;
+            
+            if (unit === 'in3') {
+                size = size / 1728;
+            }
+
+            const productInfo = {
+                size: size,
+                totalQty: parseInt(document.getElementById('totalQty').value),
+                ltcQty: [],
+                clearanceData: []
+            };
+
+            document.querySelectorAll('.inventory-entry:not(.header):not(.total)').forEach(entry => {
+                const range = entry.querySelector('div').textContent.replace('天', '');
+                const qty = parseInt(entry.querySelector('.qty-input').value) || 0;
+                const rate = parseFloat(entry.querySelector('.rate-input').value) || 0;
+                
+                productInfo.ltcQty.push({
+                    key: range,
+                    val: qty,
+                    cost: rate
+                });
+            });
+
+            document.querySelectorAll('.shipment-entry').forEach(entry => {
+                const date = entry.querySelector('input[type="month"]').value.replace('-', '');
+                const val = parseInt(entry.querySelector('input[type="number"]').value);
+                if (date && val) {
+                    productInfo.clearanceData.push({ key: date, val });
+                }
+            });
+
+            return productInfo;
+        }
+
+        // 修改 calculate 函数使用新的计算方法
+        function calculate() {
+            const productInfo = getFormData();
+            const { costRecords, monthlyStats, stats } = calculateTotalCost2_v2(productInfo);
+            
+            const totalCost = costRecords.reduce((sum, itemCosts) => 
+                sum + itemCosts.reduce((s, cost) => s + cost, 0), 0
+            );
+            
+            const resultsDiv = document.getElementById('results');
+            const itemTotalCosts = costRecords.map(itemCosts => 
+                itemCosts.reduce((sum, cost) => sum + cost, 0)
+            );
+            
+            // 格式化月度统计信息
+            const monthlyDetails = Object.entries(monthlyStats)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([month, stats]) => {
+                    const yearMonth = `${month.slice(0, 4)}年${month.slice(4)}月`;
+                    return `
+${yearMonth}:
+  月度仓储费: $${stats.monthlyStorageCost.toFixed(2)}
+  超龄仓储费: $${stats.longTermStorageCost.toFixed(2)}
+  库存分布:
+    0-90天: ${stats.inventoryByAge['0-90']}件
+    91-180天: ${stats.inventoryByAge['91-180']}件
+    181-270天: ${stats.inventoryByAge['181-270']}件
+    271-365天: ${stats.inventoryByAge['271-365']}件
+    365+天: ${stats.inventoryByAge['365+']}件
+  <span class="total-cost">月度总费用: $${(stats.monthlyStorageCost + stats.longTermStorageCost).toFixed(2)}</span>
+`;
+                }).join('\n');
+
+            const output = `
+计算结果：
+<span class="total-cost">总费用：$${totalCost.toFixed(2)}</span>
+平均每件商品总费用：$${(totalCost / itemTotalCosts.length).toFixed(2)}
+
+库存统计：
+初始库存：${stats.initialInventory}件
+计划出货：${stats.totalShipments}件
+${stats.insufficientInventory ? '<span style="color: red">警告：出货计划超过初始库存！</span>' : ''}
+剩余库存：${stats.remainingInventory}件
+
+月度详细信息：
+${monthlyDetails}
+
+费用区间分布：
+${analyzeDistribution(itemTotalCosts)}
+
+详细统计：
+商品总数：${itemTotalCosts.length}件
+<span class="total-cost">最高单件总费用：$${Math.max(...itemTotalCosts).toFixed(2)}</span>
+最低单件总费用：$${Math.min(...itemTotalCosts).toFixed(2)}
+费用标准差：$${calculateStdDev(itemTotalCosts).toFixed(2)}
+`;
+            
+            resultsDiv.innerHTML = output.replace(/\n/g, '<br>');
+            
+            // 保存到历史记录
+            saveToHistory(productInfo, {
+                totalCost,
+                monthlyStats,
+                stats,
+                html: resultsDiv.innerHTML
+            });
+        }
+
+        function analyzeDistribution(costs) {
+            const min = Math.min(...costs);
+            const max = Math.max(...costs);
+            const range = max - min;
+            const segments = 5;
+            const segmentSize = range / segments;
+            
+            const distribution = new Array(segments).fill(0);
+            
+            costs.forEach(cost => {
+                const index = Math.min(
+                    Math.floor((cost - min) / segmentSize),
+                    segments - 1
+                );
+                distribution[index]++;
+            });
+            
+            return distribution.map((count, i) => {
+                const start = (min + i * segmentSize).toFixed(2);
+                const end = (min + (i + 1) * segmentSize).toFixed(2);
+                const percentage = ((count / costs.length) * 100).toFixed(1);
+                return `$${start} ~ $${end}: ${count}件 (${percentage}%)`;
+            }).join('\n');
+        }
+
+        function calculateStdDev(numbers) {
+            const mean = numbers.reduce((sum, num) => sum + num, 0) / numbers.length;
+            const squareDiffs = numbers.map(num => Math.pow(num - mean, 2));
+            const avgSquareDiff = squareDiffs.reduce((sum, num) => sum + num, 0) / numbers.length;
+            return Math.sqrt(avgSquareDiff);
+        }
+
+        function removeShipmentEntry(button) {
+            const container = document.getElementById('shipmentEntries');
+            const entries = container.querySelectorAll('.shipment-entry');
+            
+            if (entries.length <= 1) return;
+            
+            button.parentElement.remove();
+            
+            if (entries.length <= 2) {
+                container.querySelector('.delete-btn').style.display = 'none';
+            }
+        }
+
+        // 保存计算历史到本地存储
+        function saveToHistory(input, output) {
+            const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
+            const record = {
+                timestamp: new Date().toISOString(),
+                input: input,
+                output: output,
+                summary: {
+                    size: input.size.toFixed(2),
+                    totalQty: input.totalQty,
+                    totalCost: output.totalCost.toFixed(2),
+                    months: Object.keys(output.monthlyStats).length
+                }
+            };
+            
+            history.unshift(record); // 添加到开头
+            if (history.length > 50) history.pop(); // 最多保存50条记录
+            
+            localStorage.setItem('calculationHistory', JSON.stringify(history));
+            updateHistoryList();
+        }
+
+        // 更新历史记录列表显示
+        function updateHistoryList() {
+            const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
+            const container = document.getElementById('historyList');
+            container.innerHTML = '';
+            
+            history.forEach((record, index) => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.innerHTML = `
+                    <div class="content">
+                        <div class="timestamp">${new Date(record.timestamp).toLocaleString()}</div>
+                        <div class="summary">
+                            尺寸: ${record.summary.size} ft³
+                            数量: ${record.summary.totalQty}件
+                            总费用: $${record.summary.totalCost}
+                            计算月数: ${record.summary.months}个月
+                        </div>
+                    </div>
+                    <button class="delete-history" onclick="event.stopPropagation(); deleteHistoryItem(${index})">×</button>
+                `;
+                item.querySelector('.content').onclick = () => restoreCalculation(record);
+                container.appendChild(item);
+            });
+        }
+
+        // 还原历史计算记录
+        function restoreCalculation(record) {
+            // 还原输入
+            document.getElementById('productSize').value = record.input.size;
+            document.getElementById('sizeUnit').value = 'ft3';
+            document.getElementById('totalQty').value = record.input.totalQty;
+            
+            // 还原库龄信息
+            const container = document.getElementById('inventoryEntries');
+            container.innerHTML = '';
+            record.input.ltcQty.forEach(item => {
+                const entry = document.createElement('div');
+                entry.className = 'inventory-entry';
+                entry.innerHTML = `
+                    <div>${item.key}天</div>
+                    <input type="number" value="${item.val}" class="qty-input">
+                    <input type="number" value="${item.cost}" step="0.1" readonly class="rate-input">
+                `;
+                container.appendChild(entry);
+            });
+            
+            // 还原出货计划
+            const shipmentContainer = document.getElementById('shipmentEntries');
+            shipmentContainer.innerHTML = '';
+            record.input.clearanceData.forEach(item => {
+                const entry = document.createElement('div');
+                entry.className = 'shipment-entry';
+                const date = item.key;
+                entry.innerHTML = `
+                    <input type="month" value="${date.slice(0,4)}-${date.slice(4,6)}">
+                    <input type="number" value="${item.val}">
+                    <button class="delete-btn" onclick="removeShipmentEntry(this)">×</button>
+                `;
+                shipmentContainer.appendChild(entry);
+            });
+            
+            // 还原计算结果
+            document.getElementById('results').innerHTML = record.output.html;
+        }
+
+        // 清除历史记录
+        function clearHistory() {
+            if (confirm('确定要清除所有历史记录吗？')) {
+                localStorage.removeItem('calculationHistory');
+                updateHistoryList();
+            }
+        }
+
+        function deleteHistoryItem(index) {
+            if (confirm('确定要删除这条记录吗？')) {
+                const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
+                history.splice(index, 1);
+                localStorage.setItem('calculationHistory', JSON.stringify(history));
+                updateHistoryList();
+            }
+        }
+
+        function addBatchShipments() {
+            const batchText = document.getElementById('batchShipment').value;
+            if (!batchText.trim()) return;
+
+            // 解析数量数组
+            const quantities = batchText.trim().split(/[\s,]+/).map(Number);
+            if (!quantities.length) return;
+
+            const container = document.getElementById('shipmentEntries');
+            const lastEntry = container.querySelector('.shipment-entry:last-child');
+            
+            // 获取起始日期
+            let startDate;
+            if (lastEntry && lastEntry.querySelector('input[type="month"]').value) {
+                startDate = new Date(lastEntry.querySelector('input[type="month"]').value + '-01');
+                // 移到下一个月
+                startDate.setMonth(startDate.getMonth() + 1);
+            } else {
+                startDate = new Date();
+                startDate.setDate(1);
+            }
+
+            // 添加新的出货计划
+            quantities.forEach((qty, index) => {
+                const entry = document.createElement('div');
+                entry.className = 'shipment-entry';
+                
+                const currentDate = new Date(startDate);
+                currentDate.setMonth(startDate.getMonth() + index);
+                
+                const yearMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+                
+                entry.innerHTML = `
+                    <input type="month" value="${yearMonth}">
+                    <input type="number" value="${qty}">
+                    <button class="delete-btn" onclick="removeShipmentEntry(this)">×</button>
+                `;
+                
+                container.appendChild(entry);
+            });
+
+            // 显示所有删除按钮
+            container.querySelectorAll('.delete-btn').forEach(btn => btn.style.display = 'block');
+            
+            // 清空批量输入框
+            document.getElementById('batchShipment').value = '';
+        }
+    </script>
+</body>
+</html> 

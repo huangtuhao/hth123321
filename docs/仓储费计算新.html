@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .input-section {
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="number"], input[type="text"], textarea {
+            padding: 5px;
+            margin-right: 10px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+        .entry {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 3px;
+        }
+        .entry input {
+            width: 120px;
+        }
+        .result-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .result-box {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .total {
+            font-weight: bold;
+            color: #e47911;
+        }
+        button {
+            padding: 8px 15px;
+            background: #e47911;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button.add-entry {
+            background: #37475A;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .cost-details {
+            margin-top: 20px;
+        }
+        .inventory-timeline {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        .tabs {
+            margin-bottom: 20px;
+        }
+        .tabs button {
+            background: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .tabs button.active {
+            background: #e47911;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>亚马逊复合仓储费计算器</h2>
+        
+        <div class="tabs">
+            <button onclick="switchTab('input')" class="active">数据输入</button>
+            <button onclick="switchTab('results')">计算结果</button>
+            <button onclick="switchTab('timeline')">时间轴分析</button>
+        </div>
+
+        <div id="inputTab">
+            <div class="input-section">
+                <h3>基本信息</h3>
+                <div class="input-group">
+                    <label>产品名称：</label>
+                    <input type="text" id="productName" value="产品A">
+                    <label>商品体积（立方英尺）：</label>
+                    <input type="number" id="size" value="0.19" step="0.01">
+                    <label>总库存量：</label>
+                    <input type="number" id="totalQty" value="1319">
+                </div>
+            </div>
+
+            <div class="input-section">
+                <h3>出货信息</h3>
+                <div id="shipmentEntries">
+                    <!-- 动态添加的出货记录 -->
+                </div>
+                <button class="add-entry" onclick="addShipmentEntry()">添加出货记录</button>
+                <button onclick="generateMonthlyShipments()">生成默认月度出货</button>
+            </div>
+
+            <div class="input-section">
+                <h3>库龄信息</h3>
+                <div id="inventoryEntries">
+                    <!-- 动态添加的库龄记录 -->
+                </div>
+                <button class="add-entry" onclick="addInventoryEntry()">添加库龄记录</button>
+                <button onclick="generateDefaultInventory()">生成默认库龄分布</button>
+            </div>
+
+            <button onclick="calculate()">计算费用</button>
+        </div>
+
+        <div id="resultsTab" style="display:none">
+            <div class="result-container">
+                <div id="inventoryResult" class="result-box"></div>
+                <div id="costResult" class="result-box"></div>
+                <div id="analysisResult" class="result-box"></div>
+            </div>
+        </div>
+
+        <div id="timelineTab" style="display:none">
+            <div class="inventory-timeline" id="inventoryTimeline"></div>
+        </div>
+    </div>
+
+    <script>
+        const PEAK_STORAGE_COST = 3.63; // 10 - 12月
+        const OFF_PEAK_STORAGE_COST = 0.99; // 1 - 9月
+        const DAYS_IN_MONTH = 30;
+
+        function parseInventoryInfo(product) {
+            let totalInventory = 0;
+            const inventory = product.ltcQty.map((info) => {
+                let ltcTime = info.key === '365+' ? [366, 100000] : info.key.split('-').map(Number);
+                totalInventory += info.val;
+                return {
+                    start: parseInt(ltcTime[0]),
+                    end: parseInt(ltcTime[1]),
+                    val: info.val,
+                    cost: info.cost / DAYS_IN_MONTH,
+                    past: 0
+                };
+            });
+            
+            inventory.sort((a, b) => b.start - a.start);
+            const lastInventoryInfo = inventory[inventory.length - 1];
+            
+            // 添加剩余库存
+            inventory.push({
+                start: 0,
+                end: lastInventoryInfo.start - 1,
+                val: product.totalQty - totalInventory,
+                cost: 0,
+                past: 0
+            });
+            
+            return inventory;
+        }
+
+        function parseShipmentData(product) {
+            const shipmentInfoMap = new Map();
+            const shipments = product.clearanceData.map((v) => {
+                const year = parseInt(v.key.slice(0, 4));
+                const month = parseInt(v.key.slice(4));
+                const shipment = {
+                    year,
+                    month,
+                    date: parseInt(v.key),
+                    days: DAYS_IN_MONTH,
+                    val: v.val
+                };
+                shipmentInfoMap.set(shipment.date, shipment);
+                return shipment;
+            });
+            
+            shipments.sort((a, b) => a.date - b.date);
+            
+            if (shipments.length === 0) return [];
+
+            const firstShipment = shipments[0];
+            const lastShipment = shipments[shipments.length - 1];
+            const totalMonths = lastShipment.year*12 + lastShipment.month - 
+                              (firstShipment.year*12 + firstShipment.month) + 1;
+            
+            const completeShipmentData = [];
+            for (let i = 0; i < totalMonths; i++) {
+                const addYear = Math.floor(i/12);
+                const addMonth = i%12;
+                const year = firstShipment.year + addYear;
+                const month = firstShipment.month + addMonth;
+                const date = year*100 + month;
+                
+                const info = shipmentInfoMap.get(date);
+                if (info) {
+                    completeShipmentData.push(info);
+                } else {
+                    completeShipmentData.push({
+                        year,
+                        month,
+                        date,
+                        days: DAYS_IN_MONTH,
+                        val: 0,
+                        isEmpty: true
+                    });
+                }
+            }
+            
+            return completeShipmentData;
+        }
+
+        function calculateMonthlyStorageCost(size, inventory, month, pastDays = 1) {
+            const costPerUnit = (month >= 10 && month <= 12 ? PEAK_STORAGE_COST : OFF_PEAK_STORAGE_COST) / DAYS_IN_MONTH;
+            return size * costPerUnit * inventory * pastDays;
+        }
+
+        function calculateLongTermStorageCost(inventoryInfo, size, pastDays = 1, fn) {
+            let totalCost = 0;
+            inventoryInfo.forEach((inventory) => {
+                const oneLongCost = inventory.cost * pastDays * size;
+                totalCost += inventory.val * oneLongCost;
+                fn && fn(oneLongCost, inventory);
+            });
+            return totalCost;
+        }
+
+        function updateInventoryInfoOnShipment(inventoryInfo, shipment) {
+            let remainingShipment = shipment;
+            for (let i = 0; i < inventoryInfo.length && remainingShipment > 0; i++) {
+                const inventory = inventoryInfo[i];
+                if (inventory.val >= remainingShipment) {
+                    inventory.val -= remainingShipment;
+                    remainingShipment = 0;
+                } else if (inventory.val > 0) {
+                    remainingShipment -= inventory.val;
+                    inventory.val = 0;
+                }
+            }
+        }
+
+        function updateInventoryInfoOnTimePassed(inventoryInfo, pastDays = 1) {
+            inventoryInfo.forEach((inventory) => {
+                inventory.start += pastDays;
+                inventory.end += pastDays;
+                inventory.past += pastDays;
+            });
+        }
+
+        function calculateTotalCost2(product) {
+            const size = product.size;
+            let inventoryInfo = parseInventoryInfo(product);
+            const shipmentData = parseShipmentData(product);
+            
+            let passInventory = 0;
+            const inventoryCostList = [];
+            inventoryInfo.forEach(inventory => {
+                for (let i = 0; i < inventory.val; i++) {
+                    inventoryCostList.push([]);
+                }
+            });
+
+            shipmentData.forEach((shipment) => {
+                const interval = shipment.days / Math.max(1, shipment.val);
+                for (let i = 0; i < shipment.val; i++) {
+                    updateInventoryInfoOnTimePassed(inventoryInfo, interval);
+                    
+                    const oneMonthlyStorageCost = calculateMonthlyStorageCost(size, 1, shipment.month, interval);
+                    
+                    calculateLongTermStorageCost(inventoryInfo, size, interval, (oneLongCost, inventory) => {
+                        for (let j = 0; j < inventory.val; j++) {
+                            if (passInventory + j < inventoryCostList.length) {
+                                inventoryCostList[passInventory + j].push(oneLongCost + oneMonthlyStorageCost);
+                            }
+                        }
+                    });
+
+                    updateInventoryInfoOnShipment(inventoryInfo, 1);
+                    passInventory++;
+                }
+            });
+
+            return inventoryCostList;
+        }
+
+        // UI相关函数
+        function addShipmentEntry() {
+            const container = document.getElementById('shipmentEntries');
+            const entry = document.createElement('div');
+            entry.className = 'entry';
+            entry.innerHTML = `
+                <input type="number" placeholder="年份" class="shipment-year" value="2023">
+                <input type="number" placeholder="月份" class="shipment-month" min="1" max="12" value="9">
+                <input type="number" placeholder="数量" class="shipment-qty" value="100">
+                <button onclick="this.parentElement.remove()">删除</button>
+            `;
+            container.appendChild(entry);
+        }
+
+        function addInventoryEntry() {
+            const container = document.getElementById('inventoryEntries');
+            const entry = document.createElement('div');
+            entry.className = 'entry';
+            entry.innerHTML = `
+                <input type="text" placeholder="库龄区间" class="inventory-range" value="181-210">
+                <input type="number" placeholder="数量" class="inventory-qty" value="2">
+                <input type="number" placeholder="费用" class="inventory-cost" step="0.1" value="0.5">
+                <button onclick="this.parentElement.remove()">删除</button>
+            `;
+            container.appendChild(entry);
+        }
+
+        function generateDefaultInventory() {
+            const defaultData = [
+                { range: '181-210', qty: 2, cost: 0.5 },
+                { range: '211-240', qty: 4, cost: 1.0 },
+                { range: '241-270', qty: 5, cost: 1.5 },
+                { range: '271-300', qty: 39, cost: 3.8 },
+                { range: '301-330', qty: 268, cost: 4.0 },
+                { range: '331-365', qty: 459, cost: 4.2 },
+                { range: '365+', qty: 542, cost: 6.9 }
+            ];
+
+            document.getElementById('inventoryEntries').innerHTML = '';
+            defaultData.forEach(data => {
+                const entry = document.createElement('div');
+                entry.className = 'entry';
+                entry.innerHTML = `
+                    <input type="text" class="inventory-range" value="${data.range}">
+                    <input type="number" class="inventory-qty" value="${data.qty}">
+                    <input type="number" class="inventory-cost" step="0.1" value="${data.cost}">
+                    <button onclick="this.parentElement.remove()">删除</button>
+                `;
+                document.getElementById('inventoryEntries').appendChild(entry);
+            });
+        }
+
+        function generateMonthlyShipments() {
+            document.getElementById('shipmentEntries').innerHTML = '';
+            const currentDate = new Date();
+            const months = 6;
+            
+            for (let i = 0; i < months; i++) {
+                const entry = document.createElement('div');
+                entry.className = 'entry';
+                const date = new Date(currentDate);
+                date.setMonth(date.getMonth() + i);
+                entry.innerHTML = `
+                    <input type="number" class="shipment-year" value="${date.getFullYear()}">
+                    <input type="number" class="shipment-month" value="${date.getMonth() + 1}">
+                    <input type="number" class="shipment-qty" value="100">
+                    <button onclick="this.parentElement.remove()">删除</button>
+                `;
+                document.getElementById('shipmentEntries').appendChild(entry);
+            }
+        }
+
+        function collectFormData() {
+            const shipmentEntries = document.querySelectorAll('#shipmentEntries .entry');
+            const inventoryEntries = document.querySelectorAll('#inventoryEntries .entry');
+
+            const clearanceData = Array.from(shipmentEntries).map(entry => {
+                const year = entry.querySelector('.shipment-year').value;
+                const month = entry.querySelector('.shipment-month').value.padStart(2, '0');
+                return {
+                    key: `${year}${month}`,
+                    val: parseInt(entry.querySelector('.shipment-qty').value)
+                };
+            });
+
+            const ltcQty = Array.from(inventoryEntries).map(entry => ({
+                key: entry.querySelector('.inventory-range').value,
+                val: parseInt(entry.querySelector('.inventory-qty').value),
+                cost: parseFloat(entry.querySelector('.inventory-cost').value)
+            }));
+
+            return {
+                name: document.getElementById('productName').value,
+                size: parseFloat(document.getElementById('size').value),
+                totalQty: parseInt(document.getElementById('totalQty').value),
+                clearanceData,
+                ltcQty,
+                isPaseForDay: false
+            };
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tabs button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.tabs button[onclick*="${tabName}"]`).classList.add('active');
+            
+            document.getElementById('inputTab').style.display = 'none';
+            document.getElementById('resultsTab').style.display = 'none';
+            document.getElementById('timelineTab').style.display = 'none';
+            
+            document.getElementById(`${tabName}Tab`).style.display = 'block';
+        }
+
+        function calculate() {
+            const productInfo = collectFormData();
+            const costs = calculateTotalCost2(productInfo);
+            
+            // 显示库存分布
+            let inventoryHTML = '<h3>库存分布</h3><table>';
+            inventoryHTML += '<tr><th>库龄区间</th><th>数量</th><th>长期仓储费率</th></tr>';
+            
+            productInfo.ltcQty.forEach(item => {
+                inventoryHTML += `
+                    <tr>
+                        <td>${item.key}</td>
+                        <td>${item.val}</td>
+                        <td>$${item.cost.toFixed(2)}</td>
+                    </tr>`;
+            });
+            inventoryHTML += '</table>';
+            document.getElementById('inventoryResult').innerHTML = inventoryHTML;
+
+            // 处理成本分析
+            const shipmentData = parseShipmentData(productInfo);
+            const monthlyResults = {};
+            
+            // 初始化每月数据
+            shipmentData.forEach(shipment => {
+                const monthKey = `${shipment.year}-${shipment.month}`;
+                monthlyResults[monthKey] = {
+                    monthlyCosts: [],
+                    longTermCosts: []
+                };
+            });
+
+            // 分配每个商品的成本到对应月份
+            costs.forEach(costArray => {
+                costArray.forEach((cost, index) => {
+                    const shipment = shipmentData[index];
+                    const monthKey = `${shipment.year}-${shipment.month}`;
+                    
+                    // 月度仓储费率
+                    const monthlyRate = (shipment.month >= 10 && shipment.month <= 12) ? 3.63 : 0.99;
+                    const monthlyStorageCost = productInfo.size * monthlyRate * shipment.days / 30;
+                    const longTermStorageCost = cost - monthlyStorageCost;
+                    
+                    monthlyResults[monthKey].monthlyCosts.push(monthlyStorageCost);
+                    monthlyResults[monthKey].longTermCosts.push(longTermStorageCost);
+                });
+            });
+
+            // 生成成本分析表格
+            let costHTML = '<h3>成本分析</h3><table>';
+            costHTML += '<tr><th>月份</th><th>月度仓储费</th><th>长期仓储费</th><th>合计</th></tr>';
+            
+            let totalMonthlyCost = 0;
+            let totalLongTermCost = 0;
+
+            Object.entries(monthlyResults)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .forEach(([monthKey, data]) => {
+                    const monthlyCost = data.monthlyCosts.reduce((sum, cost) => sum + cost, 0);
+                    const longTermCost = data.longTermCosts.reduce((sum, cost) => sum + cost, 0);
+                    const totalCost = monthlyCost + longTermCost;
+                    
+                    totalMonthlyCost += monthlyCost;
+                    totalLongTermCost += longTermCost;
+                    
+                    const [year, month] = monthKey.split('-');
+                    costHTML += `
+                        <tr>
+                            <td>${year}年${month}月</td>
+                            <td>$${monthlyCost.toFixed(2)}</td>
+                            <td>$${longTermCost.toFixed(2)}</td>
+                            <td>$${totalCost.toFixed(2)}</td>
+                        </tr>`;
+                });
+
+            const totalCost = totalMonthlyCost + totalLongTermCost;
+            costHTML += `
+                <tr class="total">
+                    <td>总计</td>
+                    <td>$${totalMonthlyCost.toFixed(2)}</td>
+                    <td>$${totalLongTermCost.toFixed(2)}</td>
+                    <td>$${totalCost.toFixed(2)}</td>
+                </tr>
+            </table>`;
+            
+            document.getElementById('costResult').innerHTML = costHTML;
+
+            // 显示分析结果
+            let analysisHTML = '<h3>费用分析</h3>';
+            analysisHTML += `
+                <p>总库存: ${productInfo.totalQty} 件</p>
+                <p>平均单件仓储费: $${(totalCost / productInfo.totalQty).toFixed(2)}</p>
+                <p>预计月度仓储费: $${(totalCost / Object.keys(monthlyResults).length).toFixed(2)}</p>
+            `;
+            
+            document.getElementById('analysisResult').innerHTML = analysisHTML;
+
+            // 切换到结果标签页
+            switchTab('results');
+        }
+
+        function generateTimeline(costs, productInfo) {
+            const shipmentData = parseShipmentData(productInfo);
+            let timelineHTML = '<h3>仓储费用时间轴</h3><table>';
+            timelineHTML += '<tr><th>时间</th><th>出货量</th><th>当月费用</th></tr>';
+
+            shipmentData.forEach((shipment, index) => {
+                const monthCosts = costs.map(cost => cost[index] || 0);
+                const totalMonthCost = monthCosts.reduce((a, b) => a + b, 0);
+                
+                timelineHTML += `
+                    <tr>
+                        <td>${shipment.year}年${shipment.month}月</td>
+                        <td>${shipment.val}件</td>
+                        <td>$${totalMonthCost.toFixed(2)}</td>
+                    </tr>`;
+            });
+
+            timelineHTML += '</table>';
+            document.getElementById('inventoryTimeline').innerHTML = timelineHTML;
+        }
+
+        // 初始化页面
+        window.onload = function() {
+            generateDefaultInventory();
+            generateMonthlyShipments();
+        };
+    </script>
+</body>
+</html>
