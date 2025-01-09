@@ -736,8 +736,12 @@ ${analyzeDistribution(itemTotalCosts)}
 
         // 还原历史计算记录
         function restoreCalculation(record) {
-            // 还原输入
-            document.getElementById('productSize').value = record.input.size;
+            // 还原输入，统一转换为立方英尺
+            const size = record.input.unit === 'in3' ? 
+                record.input.size * CUBIC_INCH_TO_FEET : 
+                record.input.size;
+            
+            document.getElementById('productSize').value = size;
             document.getElementById('sizeUnit').value = 'ft3';
             document.getElementById('totalQty').value = record.input.totalQty;
             
@@ -875,9 +879,10 @@ ${analyzeDistribution(itemTotalCosts)}
                 try {
                     const data = JSON.parse(atob(encodedData));
                     
-                    // 设置产品尺寸
-                    document.getElementById('productSize').value = data.size;
-                    document.getElementById('sizeUnit').value = data.unit;
+                    // 设置产品尺寸，统一转换为立方英尺
+                    const size = data.unit === 'in3' ? data.size * CUBIC_INCH_TO_FEET : data.size;
+                    document.getElementById('productSize').value = size;
+                    document.getElementById('sizeUnit').value = 'ft3';
                     
                     // 设置库龄信息
                     const container = document.getElementById('inventoryEntries');
@@ -922,6 +927,9 @@ ${analyzeDistribution(itemTotalCosts)}
                 }
             }
         }
+
+        // 添加单位转换常量（如果还没有的话）
+        const CUBIC_INCH_TO_FEET = 1 / 1728; // 1 ft³ = 1728 in³
     </script>
 </body>
 </html> 
