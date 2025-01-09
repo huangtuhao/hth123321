@@ -539,12 +539,9 @@
             let size = parseFloat(document.getElementById('productSize').value);
             const unit = document.getElementById('sizeUnit').value;
             
-            if (unit === 'in3') {
-                size = size / 1728;
-            }
-
             const productInfo = {
                 size: size,
+                unit: unit,
                 totalQty: parseInt(document.getElementById('totalQty').value),
                 ltcQty: [],
                 clearanceData: []
@@ -576,6 +573,10 @@
         // 修改 calculate 函数使用新的计算方法
         function calculate() {
             const productInfo = getFormData();
+            if (productInfo.unit === 'in3') {
+                productInfo.size = productInfo.size * CUBIC_INCH_TO_FEET;
+            }
+            
             const { costRecords, monthlyStats, stats } = calculateTotalCost2_v2(productInfo);
             
             const totalCost = costRecords.reduce((sum, itemCosts) => 
@@ -689,21 +690,26 @@ ${analyzeDistribution(itemTotalCosts)}
         // 保存计算历史到本地存储
         function saveToHistory(input, output) {
             const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
+            // 保存时统一转换为立方英尺
+            const sizeInFt3 = input.unit === 'in3' ? input.size * CUBIC_INCH_TO_FEET : input.size;
             const record = {
                 timestamp: new Date().toISOString(),
-                input: input,
+                input: {
+                    ...input,
+                    size: sizeInFt3,
+                    unit: 'ft3'  // 统一保存为立方英尺
+                },
                 output: output,
                 summary: {
-                    size: input.size.toFixed(2),
+                    size: sizeInFt3.toFixed(2),
                     totalQty: input.totalQty,
                     totalCost: output.totalCost.toFixed(2),
                     months: Object.keys(output.monthlyStats).length
                 }
             };
             
-            history.unshift(record); // 添加到开头
-            if (history.length > 50) history.pop(); // 最多保存50条记录
-            
+            history.unshift(record);
+            if (history.length > 50) history.pop();
             localStorage.setItem('calculationHistory', JSON.stringify(history));
             updateHistoryList();
         }
@@ -736,28 +742,28 @@ ${analyzeDistribution(itemTotalCosts)}
 
         // 还原历史计算记录
         function restoreCalculation(record) {
-            // 还原输入，统一转换为立方英尺
-            const size = record.input.unit === 'in3' ? 
-                record.input.size * CUBIC_INCH_TO_FEET : 
-                record.input.size;
+            // 历史记录中的尺寸都是立方英尺，转换为立方英寸显示
+            const size = record.input.size * 1728;
             
             document.getElementById('productSize').value = size;
-            document.getElementById('sizeUnit').value = 'ft3';
+            document.getElementById('sizeUnit').value = 'in3';
             document.getElementById('totalQty').value = record.input.totalQty;
             
             // 还原库龄信息
             const container = document.getElementById('inventoryEntries');
-            container.innerHTML = '';
-            record.input.ltcQty.forEach(item => {
-                const entry = document.createElement('div');
-                entry.className = 'inventory-entry';
-                entry.innerHTML = `
-                    <div>${item.key}天</div>
-                    <input type="number" value="${item.val}" class="qty-input">
-                    <input type="number" value="${item.cost}" step="0.1" readonly class="rate-input">
-                `;
-                container.appendChild(entry);
+            // 重置所有数量为0
+            container.querySelectorAll('.inventory-entry:not(.header):not(.total) .qty-input')
+                .forEach(input => input.value = '0');
+            
+            // 填充库龄数据
+            record.input.ltcQty.forEach((item, index) => {
+                const qtyInput = container.querySelectorAll('.inventory-entry:not(.header):not(.total)')[index]
+                    .querySelector('.qty-input');
+                qtyInput.value = item.val;
             });
+            
+            // 更新总数
+            updateTotalQuantity();
             
             // 还原出货计划
             const shipmentContainer = document.getElementById('shipmentEntries');
@@ -774,8 +780,17 @@ ${analyzeDistribution(itemTotalCosts)}
                 shipmentContainer.appendChild(entry);
             });
             
+            // 显示所有删除按钮
+            if (record.input.clearanceData.length > 1) {
+                shipmentContainer.querySelectorAll('.delete-btn')
+                    .forEach(btn => btn.style.display = 'block');
+            }
+            
             // 还原计算结果
             document.getElementById('results').innerHTML = record.output.html;
+            
+            // 滚动到计算结果
+            document.querySelector('.result-section').scrollIntoView({ behavior: 'smooth' });
         }
 
         // 清除历史记录
@@ -848,7 +863,7 @@ ${analyzeDistribution(itemTotalCosts)}
             const data = getFormData();
             const shareData = {
                 size: data.size,
-                unit: document.getElementById('sizeUnit').value,
+                unit: data.unit,
                 inventory: data.ltcQty,
                 shipments: data.clearanceData
             };
@@ -879,10 +894,10 @@ ${analyzeDistribution(itemTotalCosts)}
                 try {
                     const data = JSON.parse(atob(encodedData));
                     
-                    // 设置产品尺寸，统一转换为立方英尺
-                    const size = data.unit === 'in3' ? data.size * CUBIC_INCH_TO_FEET : data.size;
+                    // 如果原始单位是立方英尺，需要转换为立方英寸
+                    const size = data.unit === 'ft3' ? data.size * 1728 : data.size;
                     document.getElementById('productSize').value = size;
-                    document.getElementById('sizeUnit').value = 'ft3';
+                    document.getElementById('sizeUnit').value = 'in3';
                     
                     // 设置库龄信息
                     const container = document.getElementById('inventoryEntries');
@@ -927,9 +942,6 @@ ${analyzeDistribution(itemTotalCosts)}
                 }
             }
         }
-
-        // 添加单位转换常量（如果还没有的话）
-        const CUBIC_INCH_TO_FEET = 1 / 1728; // 1 ft³ = 1728 in³
     </script>
 </body>
 </html> 
