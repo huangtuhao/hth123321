@@ -1,0 +1,283 @@
+// ==UserScript==
+// @name         亚马逊产品图片批量下载
+// @namespace    http://tampermonkey.net/
+// @version      0.2
+// @description  批量下载亚马逊搜索结果中的产品图片（包括主图和附图）
+// @author       Your name
+// @match        https://www.amazon.com/*
+// @grant        GM_download
+// @grant        GM_xmlhttpRequest
+// @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // 添加下载控制面板
+    function addDownloadPanel() {
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 9999;
+            padding: 15px;
+            background: #fff;
+            border: 1px solid #232f3e;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-size: 14px;
+            min-width: 200px;
+        `;
+
+        panel.innerHTML = `
+            <div style="margin-bottom: 10px;">
+                <label>下载页数：</label>
+                <input type="number" id="pageCount" value="3" min="1" max="20" style="width: 60px;">
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button id="loadProductsBtn" style="
+                    padding: 8px 15px;
+                    background: #232f3e;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                ">加载产品</button>
+                <button id="startDownloadBtn" style="
+                    padding: 8px 15px;
+                    background: #37475A;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    display: none;
+                ">开始下载</button>
+            </div>
+            <div id="downloadProgress" style="margin-top: 10px;"></div>
+        `;
+
+        document.body.appendChild(panel);
+        
+        // 分别添加两个按钮的事件监听
+        document.getElementById('loadProductsBtn').addEventListener('click', loadProducts);
+        document.getElementById('startDownloadBtn').addEventListener('click', startDownload);
+    }
+
+    // 获取指定页数的所有产品链接
+    async function getAllProductLinks(pageCount) {
+        const links = new Set();
+        const baseUrl = window.location.href.split('&page=')[0].split('ref=')[0];
+        
+        for(let i = 1; i <= pageCount; i++) {
+            const pageUrl = i === 1 ? baseUrl : `${baseUrl}&page=${i}`;
+            try {
+                const response = await new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: pageUrl,
+                        onload: resolve,
+                        onerror: reject
+                    });
+                });
+
+                const html = response.responseText;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // 只获取主搜索结果中的产品链接
+                const searchResults = doc.querySelector('.s-main-slot');
+                if (searchResults) {
+                    // 使用更精确的选择器，只获取搜索结果中的主要产品
+                    const productCards = searchResults.querySelectorAll('[data-component-type="s-search-result"]');
+                    
+                    productCards.forEach(card => {
+                        // 先找到产品标题的a标签
+                        const productLink = card.querySelector('.a-link-normal[href*="/dp/"]');
+                        if (productLink && productLink.href) {
+                            const href = productLink.href;
+                            const asinMatch = href.match(/\/dp\/([A-Z0-9]{10})/);
+                            if (asinMatch) {
+                                links.add(`https://www.amazon.com/dp/${asinMatch[1]}`);
+                            }
+                        }
+                    });
+                }
+
+                // 显示每页的进度
+                const progressDiv = document.getElementById('downloadProgress');
+                progressDiv.textContent = `正在获取第 ${i}/${pageCount} 页的产品链接...已找到 ${links.size} 个产品`;
+                
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (error) {
+                console.error(`获取第${i}页数据失败:`, error);
+            }
+        }
+        
+        return Array.from(links);
+    }
+
+    // 添加获取搜索关键词的函数
+    function getSearchKeyword() {
+        const url = new URL(window.location.href);
+        const keyword = url.searchParams.get('k') || 'unknown';
+        return keyword.replace(/[^a-zA-Z0-9]/g, '_');
+    }
+
+    // 修改获取产品图片URL的函数
+    async function getProductImages(url) {
+        try {
+            const response = await new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: url,
+                    onload: resolve,
+                    onerror: reject
+                });
+            });
+
+            const html = response.responseText;
+            const imageUrls = [];
+            
+            // 查找包含图片数据的脚本
+            const dataMatch = html.match(/jQuery\.parseJSON\('(.+?)'\)/);
+            if (dataMatch) {
+                try {
+                    // 解析JSON数据
+                    const jsonStr = dataMatch[1].replace(/\\'/g, "'");
+                    const data = JSON.parse(jsonStr);
+                    
+                    // 只获取当前颜色变体的图片
+                    if (data.colorImages && data.landingAsinColor) {
+                        const currentColorImages = data.colorImages[data.landingAsinColor] || [];
+                        currentColorImages.forEach(img => {
+                            const imageUrl = img.hiRes || img.large;
+                            if (imageUrl) {
+                                imageUrls.push({
+                                    url: imageUrl,
+                                    variant: img.variant || 'main'
+                                });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error('解析图片数据失败:', e);
+                }
+            }
+
+            return imageUrls;
+        } catch (error) {
+            console.error('获取产品图片失败:', error);
+            return [];
+        }
+    }
+
+    // 修改下载图片的函数
+    async function downloadImageToZip(imageData, zip, asin) {
+        try {
+            const response = await new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: imageData.url,
+                    responseType: 'blob',
+                    onload: resolve,
+                    onerror: reject
+                });
+            });
+
+            const blob = response.response;
+            // 使用ASIN和图片类型命名
+            const filename = `${asin}_${imageData.variant}.jpg`;
+            zip.file(filename, blob);
+            return true;
+        } catch (error) {
+            console.error(`下载图片失败: ${imageData.url}`, error);
+            return false;
+        }
+    }
+
+    // 添加新的全局变量存储产品链接
+    let globalProductLinks = [];
+
+    // 新增加载产品的函数
+    async function loadProducts() {
+        const pageCount = parseInt(document.getElementById('pageCount').value) || 3;
+        const progressDiv = document.getElementById('downloadProgress');
+        const loadBtn = document.getElementById('loadProductsBtn');
+        const downloadBtn = document.getElementById('startDownloadBtn');
+        
+        progressDiv.style.display = 'block';
+        loadBtn.disabled = true;
+
+        try {
+            progressDiv.textContent = '正在获取产品链接...';
+            globalProductLinks = await getAllProductLinks(pageCount);
+            
+            if (globalProductLinks.length === 0) {
+                return;
+            }
+
+            progressDiv.textContent = `找到 ${globalProductLinks.length} 个产品，可以开始下载图片`;
+            downloadBtn.style.display = 'block'; // 显示下载按钮
+        } catch (error) {
+            progressDiv.textContent = '发生错误：' + error.message;
+            console.error(error);
+        } finally {
+            loadBtn.disabled = false;
+        }
+    }
+
+    // 修改开始下载函数
+    async function startDownload() {
+        if (globalProductLinks.length === 0) {
+            alert('请先加载产品！');
+            return;
+        }
+
+        const progressDiv = document.getElementById('downloadProgress');
+        const downloadBtn = document.getElementById('startDownloadBtn');
+        
+        progressDiv.style.display = 'block';
+        downloadBtn.disabled = true;
+
+        try {
+            const searchKeyword = getSearchKeyword();
+            const zip = new JSZip();
+            const folder = zip.folder(`amazon_images_${searchKeyword}`);
+
+            for (let i = 0; i < globalProductLinks.length; i++) {
+                const url = globalProductLinks[i];
+                const asin = url.match(/\/dp\/([A-Z0-9]{10})/)[1];
+                
+                progressDiv.textContent = `正在处理第 ${i+1}/${globalProductLinks.length} 个产品 (${asin})...`;
+                const images = await getProductImages(url);
+                
+                for (let j = 0; j < images.length; j++) {
+                    await downloadImageToZip(images[j], folder, asin);
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            progressDiv.textContent = '正在创建压缩包...';
+            const content = await zip.generateAsync({type: "blob"});
+            const timestamp = new Date().toISOString().split('T')[0];
+            
+            GM_download({
+                url: URL.createObjectURL(content),
+                name: `amazon_${searchKeyword}_${timestamp}.zip`,
+                saveAs: true
+            });
+
+            progressDiv.textContent = '下载完成！';
+        } catch (error) {
+            progressDiv.textContent = '发生错误：' + error.message;
+            console.error(error);
+        } finally {
+            downloadBtn.disabled = false;
+        }
+    }
+
+    // 页面加载完成后添加下载面板
+    window.addEventListener('load', addDownloadPanel);
+})();
