@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         亚马逊产品图片批量下载
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.3
 // @description  批量下载亚马逊搜索结果中的产品图片（包括主图和附图）
 // @author       Your name
 // @match        https://www.amazon.com/*
@@ -43,28 +43,15 @@
                 <input type="text" id="folderPrefix" placeholder="可选" style="width: 120px;">
             </div>
             <div style="margin-bottom: 10px;">
-                <label>
-                    <input type="checkbox" id="askSaveLocation" checked>
-                    手动选择保存位置
-                </label>
-            </div>
-            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <button id="loadProductsBtn" style="
+                <button id="downloadBtn" style="
                     padding: 8px 15px;
                     background: #232f3e;
                     color: white;
                     border: none;
                     border-radius: 4px;
                     cursor: pointer;
-                ">加载产品</button>
-                <button id="startDownloadBtn" style="
-                    padding: 8px 15px;
-                    background: #37475A;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    display: none;
+                    width: 100%;
+                    transition: all 0.3s;
                 ">开始下载</button>
             </div>
             <div id="downloadProgress" style="margin-top: 10px;"></div>
@@ -72,8 +59,22 @@
 
         document.body.appendChild(panel);
         
-        document.getElementById('loadProductsBtn').addEventListener('click', loadProducts);
-        document.getElementById('startDownloadBtn').addEventListener('click', startDownload);
+        // 添加按钮禁用时的样式
+        const style = document.createElement('style');
+        style.textContent = `
+            #downloadBtn:disabled {
+                background: #cccccc !important;
+                cursor: not-allowed !important;
+                opacity: 0.7;
+            }
+            #pageCount:disabled, #folderPrefix:disabled {
+                background: #f5f5f5;
+                cursor: not-allowed;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.getElementById('downloadBtn').addEventListener('click', startDownload);
     }
 
     // 获取指定页数的所有产品链接
@@ -184,129 +185,109 @@
         }
     }
 
-    // 添加新的全局变量存储产品链接
-    let globalProductLinks = [];
-
-    // 新增加载产品的函数
-    async function loadProducts() {
-        const pageCount = parseInt(document.getElementById('pageCount').value) || 3;
+    // 修改下载函数，添加去重逻辑
+    async function startDownload() {
         const progressDiv = document.getElementById('downloadProgress');
-        const loadBtn = document.getElementById('loadProductsBtn');
-        const downloadBtn = document.getElementById('startDownloadBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const pageCountInput = document.getElementById('pageCount');
+        const folderPrefixInput = document.getElementById('folderPrefix');
+        
+        // 禁用所有输入和按钮
+        downloadBtn.disabled = true;
+        pageCountInput.disabled = true;
+        folderPrefixInput.disabled = true;
+        downloadBtn.textContent = '下载中...';
+
+        const pageCount = parseInt(pageCountInput.value) || 3;
+        const folderPrefix = folderPrefixInput.value.trim();
         
         progressDiv.style.display = 'block';
-        loadBtn.disabled = true;
 
         try {
+            // 第一步：获取产品链接
             progressDiv.textContent = '正在获取产品链接...';
-            globalProductLinks = await getAllProductLinks(pageCount);
+            const productLinks = await getAllProductLinks(pageCount);
             
-            if (globalProductLinks.length === 0) {
+            if (productLinks.length === 0) {
+                progressDiv.textContent = '未找到产品！';
                 return;
             }
 
-            progressDiv.textContent = `找到 ${globalProductLinks.length} 个产品，可以开始下载图片`;
-            downloadBtn.style.display = 'block'; // 显示下载按钮
-        } catch (error) {
-            progressDiv.textContent = '发生错误：' + error.message;
-            console.error(error);
-        } finally {
-            loadBtn.disabled = false;
-        }
-    }
-
-    // 修改开始下载函数
-    async function startDownload() {
-        if (globalProductLinks.length === 0) {
-            alert('请先加载产品！');
-            return;
-        }
-
-        const progressDiv = document.getElementById('downloadProgress');
-        const downloadBtn = document.getElementById('startDownloadBtn');
-        const folderPrefix = document.getElementById('folderPrefix').value.trim();
-        
-        progressDiv.style.display = 'block';
-        downloadBtn.disabled = true;
-
-        try {
             const searchKeyword = getSearchKeyword();
             const timestamp = new Date().toISOString().split('T')[0];
-            let totalImages = 0;
-            let downloadedImages = 0;
-            let failedImages = 0;
-
-            // 第一步：收集所有图片信息
-            const allImageInfo = [];
-            for (let i = 0; i < globalProductLinks.length; i++) {
-                const url = globalProductLinks[i];
-                const asin = url.match(/\/dp\/([A-Z0-9]{10})/)[1];
-                
-                progressDiv.textContent = `[1/2] 正在获取第 ${i+1}/${globalProductLinks.length} 个产品的图片信息 (${asin})...`;
-                const images = await getProductImages(url);
-                
-                if (images.length > 0) {
-                    allImageInfo.push({
-                        asin: asin,
-                        images: images
-                    });
-                    totalImages += images.length;
-                }
-
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-
-            // 第二步：开始下载图片
-            progressDiv.textContent = `[2/2] 找到 ${totalImages} 张图片，开始下载...`;
-
-            // 构建基础文件名
             const baseFolder = folderPrefix 
                 ? `${folderPrefix}/${searchKeyword}/`
                 : `amazon_${searchKeyword}/`;
 
-            const failedDownloads = []; // 记录失败的下载
+            let totalImages = 0;
+            let downloadedImages = 0;
+            let failedImages = 0;
+            const failedDownloads = [];
+            const downloadedUrls = new Set(); // 用于记录已下载的URL
+            const downloadedFilenames = new Set(); // 用于记录已使用的文件名
 
-            for (const product of allImageInfo) {
-                const asin = product.asin;
+            // 收集所有图片信息
+            for (let i = 0; i < productLinks.length; i++) {
+                const url = productLinks[i];
+                const asin = url.match(/\/dp\/([A-Z0-9]{10})/)[1];
                 
-                for (const image of product.images) {
-                    const filename = `${baseFolder}${asin}_${image.variant}.jpg`;
-                    
-                    try {
-                        await new Promise((resolve, reject) => {
-                            GM_download({
-                                url: image.url,
-                                name: filename,
-                                saveAs: document.getElementById('askSaveLocation').checked,
-                                onload: () => {
-                                    downloadedImages++;
-                                    progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
-                                    resolve();
-                                },
-                                onerror: (error) => {
-                                    failedImages++;
-                                    failedDownloads.push({
-                                        filename: filename,
-                                        originalUrl: image.url
-                                    });
-                                    // 下载空白图片
-                                    GM_download({
-                                        url: BLANK_IMAGE,
-                                        name: filename,
-                                        onload: () => {
-                                            console.log(`已用空白图片替代: ${filename}`);
-                                        }
-                                    });
-                                    progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
-                                    resolve();
-                                }
-                            });
-                        });
+                progressDiv.textContent = `[1/2] 正在获取第 ${i+1}/${productLinks.length} 个产品的图片信息 (${asin})...`;
+                const images = await getProductImages(url);
+                
+                if (images.length > 0) {
+                    // 对当前产品的图片进行去重
+                    const uniqueImages = images.filter(image => {
+                        const filename = `${baseFolder}${asin}_${image.variant}.jpg`;
+                        // 检查URL和文件名是否都未被使用过
+                        if (!downloadedUrls.has(image.url) && !downloadedFilenames.has(filename)) {
+                            downloadedUrls.add(image.url);
+                            downloadedFilenames.add(filename);
+                            return true;
+                        }
+                        return false;
+                    });
 
-                    } catch (error) {
-                        failedImages++;
-                        console.error(`下载图片失败: ${image.url}`, error);
-                        continue;
+                    totalImages += uniqueImages.length;
+                    
+                    // 下载去重后的图片
+                    for (const image of uniqueImages) {
+                        try {
+                            const filename = `${baseFolder}${asin}_${image.variant}.jpg`;
+                            
+                            await new Promise((resolve, reject) => {
+                                GM_download({
+                                    url: image.url,
+                                    name: filename,
+                                    onload: () => {
+                                        downloadedImages++;
+                                        progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
+                                        resolve();
+                                    },
+                                    onerror: (error) => {
+                                        failedImages++;
+                                        failedDownloads.push({
+                                            filename: filename,
+                                            originalUrl: image.url
+                                        });
+                                        // 下载空白图片
+                                        GM_download({
+                                            url: BLANK_IMAGE,
+                                            name: filename,
+                                            onload: () => {
+                                                console.log(`已用空白图片替代: ${filename}`);
+                                            }
+                                        });
+                                        progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
+                                        resolve();
+                                    }
+                                });
+                            });
+
+                        } catch (error) {
+                            failedImages++;
+                            console.error(`下载图片失败: ${image.url}`, error);
+                            continue;
+                        }
                     }
                 }
             }
@@ -314,7 +295,6 @@
             const successRate = Math.round((downloadedImages / totalImages) * 100);
             let resultMessage = `下载完成！成功: ${downloadedImages} | 失败: ${failedImages} | 成功率: ${successRate}%`;
             
-            // 如果有失败的下载，添加失败列表到控制台
             if (failedDownloads.length > 0) {
                 console.log('失败的下载列表：');
                 failedDownloads.forEach(item => {
@@ -330,7 +310,11 @@
             progressDiv.textContent = '发生错误：' + error.message;
             console.error(error);
         } finally {
+            // 恢复所有输入和按钮
             downloadBtn.disabled = false;
+            pageCountInput.disabled = false;
+            folderPrefixInput.disabled = false;
+            downloadBtn.textContent = '开始下载';
         }
     }
 
