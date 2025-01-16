@@ -13,6 +13,9 @@
 (function() {
     'use strict';
 
+    // 添加一个1x1像素的空白图片base64编码
+    const BLANK_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
     // 添加下载控制面板
     function addDownloadPanel() {
         const panel = document.createElement('div');
@@ -34,6 +37,16 @@
             <div style="margin-bottom: 10px;">
                 <label>下载页数：</label>
                 <input type="number" id="pageCount" value="3" min="1" max="20" style="width: 60px;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label>文件夹前缀：</label>
+                <input type="text" id="folderPrefix" placeholder="可选" style="width: 120px;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label>
+                    <input type="checkbox" id="askSaveLocation" checked>
+                    手动选择保存位置
+                </label>
             </div>
             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                 <button id="loadProductsBtn" style="
@@ -59,7 +72,6 @@
 
         document.body.appendChild(panel);
         
-        // 分别添加两个按钮的事件监听
         document.getElementById('loadProductsBtn').addEventListener('click', loadProducts);
         document.getElementById('startDownloadBtn').addEventListener('click', startDownload);
     }
@@ -172,30 +184,6 @@
         }
     }
 
-    // 修改下载图片的函数
-    async function downloadImageToZip(imageData, zip, asin) {
-        try {
-            const response = await new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: imageData.url,
-                    responseType: 'blob',
-                    onload: resolve,
-                    onerror: reject
-                });
-            });
-
-            const blob = response.response;
-            // 使用ASIN和图片类型命名
-            const filename = `${asin}_${imageData.variant}.jpg`;
-            zip.file(filename, blob);
-            return true;
-        } catch (error) {
-            console.error(`下载图片失败: ${imageData.url}`, error);
-            return false;
-        }
-    }
-
     // 添加新的全局变量存储产品链接
     let globalProductLinks = [];
 
@@ -236,40 +224,108 @@
 
         const progressDiv = document.getElementById('downloadProgress');
         const downloadBtn = document.getElementById('startDownloadBtn');
+        const folderPrefix = document.getElementById('folderPrefix').value.trim();
         
         progressDiv.style.display = 'block';
         downloadBtn.disabled = true;
 
         try {
             const searchKeyword = getSearchKeyword();
-            const zip = new JSZip();
-            const folder = zip.folder(`amazon_images_${searchKeyword}`);
+            const timestamp = new Date().toISOString().split('T')[0];
+            let totalImages = 0;
+            let downloadedImages = 0;
+            let failedImages = 0;
 
+            // 第一步：收集所有图片信息
+            const allImageInfo = [];
             for (let i = 0; i < globalProductLinks.length; i++) {
                 const url = globalProductLinks[i];
                 const asin = url.match(/\/dp\/([A-Z0-9]{10})/)[1];
                 
-                progressDiv.textContent = `正在处理第 ${i+1}/${globalProductLinks.length} 个产品 (${asin})...`;
+                progressDiv.textContent = `[1/2] 正在获取第 ${i+1}/${globalProductLinks.length} 个产品的图片信息 (${asin})...`;
                 const images = await getProductImages(url);
                 
-                for (let j = 0; j < images.length; j++) {
-                    await downloadImageToZip(images[j], folder, asin);
+                if (images.length > 0) {
+                    allImageInfo.push({
+                        asin: asin,
+                        images: images
+                    });
+                    totalImages += images.length;
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            progressDiv.textContent = '正在创建压缩包...';
-            const content = await zip.generateAsync({type: "blob"});
-            const timestamp = new Date().toISOString().split('T')[0];
-            
-            GM_download({
-                url: URL.createObjectURL(content),
-                name: `amazon_${searchKeyword}_${timestamp}.zip`,
-                saveAs: true
-            });
+            // 第二步：开始下载图片
+            progressDiv.textContent = `[2/2] 找到 ${totalImages} 张图片，开始下载...`;
 
-            progressDiv.textContent = '下载完成！';
+            // 构建基础文件名
+            const baseFolder = folderPrefix 
+                ? `${folderPrefix}/${searchKeyword}/`
+                : `amazon_${searchKeyword}/`;
+
+            const failedDownloads = []; // 记录失败的下载
+
+            for (const product of allImageInfo) {
+                const asin = product.asin;
+                
+                for (const image of product.images) {
+                    const filename = `${baseFolder}${asin}_${image.variant}.jpg`;
+                    
+                    try {
+                        await new Promise((resolve, reject) => {
+                            GM_download({
+                                url: image.url,
+                                name: filename,
+                                saveAs: document.getElementById('askSaveLocation').checked,
+                                onload: () => {
+                                    downloadedImages++;
+                                    progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
+                                    resolve();
+                                },
+                                onerror: (error) => {
+                                    failedImages++;
+                                    failedDownloads.push({
+                                        filename: filename,
+                                        originalUrl: image.url
+                                    });
+                                    // 下载空白图片
+                                    GM_download({
+                                        url: BLANK_IMAGE,
+                                        name: filename,
+                                        onload: () => {
+                                            console.log(`已用空白图片替代: ${filename}`);
+                                        }
+                                    });
+                                    progressDiv.textContent = `[2/2] 下载进度: ${downloadedImages}/${totalImages} (${Math.round(downloadedImages/totalImages*100)}%) | 成功: ${downloadedImages} | 失败: ${failedImages}`;
+                                    resolve();
+                                }
+                            });
+                        });
+
+                    } catch (error) {
+                        failedImages++;
+                        console.error(`下载图片失败: ${image.url}`, error);
+                        continue;
+                    }
+                }
+            }
+
+            const successRate = Math.round((downloadedImages / totalImages) * 100);
+            let resultMessage = `下载完成！成功: ${downloadedImages} | 失败: ${failedImages} | 成功率: ${successRate}%`;
+            
+            // 如果有失败的下载，添加失败列表到控制台
+            if (failedDownloads.length > 0) {
+                console.log('失败的下载列表：');
+                failedDownloads.forEach(item => {
+                    console.log(`文件名: ${item.filename}`);
+                    console.log(`原始URL: ${item.originalUrl}`);
+                    console.log('---');
+                });
+                resultMessage += '\n请在控制台(F12)查看失败图片的详细信息';
+            }
+
+            progressDiv.textContent = resultMessage;
         } catch (error) {
             progressDiv.textContent = '发生错误：' + error.message;
             console.error(error);
