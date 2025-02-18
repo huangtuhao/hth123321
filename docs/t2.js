@@ -245,3 +245,11 @@ function generateDateRange(startDate, endDate) {
 
     return dates;
 } 
+
+function test() {
+    const product = {"size":0.04293518518518518,"unit":"ft3","totalQty":4345,"ltcQty":[{"key":"0-30","val":16,"cost":0},{"key":"31-60","val":4329,"cost":0},{"key":"61-90","val":0,"cost":0},{"key":"91-120","val":0,"cost":0},{"key":"121-150","val":0,"cost":0},{"key":"151-180","val":0,"cost":0},{"key":"181-210","val":0,"cost":0.5},{"key":"211-240","val":0,"cost":1},{"key":"241-270","val":0,"cost":1.5},{"key":"271-300","val":0,"cost":3.8},{"key":"301-330","val":0,"cost":4},{"key":"331-365","val":0,"cost":4.2},{"key":"365+","val":0,"cost":6.9}],"clearanceData":[{"key":"202502","val":200},{"key":"202503","val":300},{"key":"202504","val":300},{"key":"202505","val":300},{"key":"202506","val":300},{"key":"202507","val":300},{"key":"202508","val":300},{"key":"202509","val":300},{"key":"202510","val":300},{"key":"202511","val":1000},{"key":"202512","val":1000}]};
+
+    const rt = calculateTotalCost2_v2(product);
+
+    console.log(rt);
+}

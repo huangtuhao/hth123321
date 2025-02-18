@@ -77,6 +77,14 @@
         document.getElementById('downloadBtn').addEventListener('click', startDownload);
     }
 
+    function getAsin(href, isDecode) {
+        let asinMatch = href.match(/\/dp\/([A-Z0-9]{10})/);
+        if (!asinMatch && !isDecode) {
+            return getAsin(decodeURIComponent(href), true);
+        }
+        return asinMatch && asinMatch[1];
+    }
+
     // 获取指定页数的所有产品链接
     async function getAllProductLinks(pageCount) {
         const links = new Set();
@@ -106,12 +114,11 @@
                     
                     productCards.forEach(card => {
                         // 先找到产品标题的a标签
-                        const productLink = card.querySelector('.a-link-normal[href*="/dp/"]');
+                        const productLink = card.querySelector('h2').closest('a')
                         if (productLink && productLink.href) {
-                            const href = productLink.href;
-                            const asinMatch = href.match(/\/dp\/([A-Z0-9]{10})/);
-                            if (asinMatch) {
-                                links.add(`https://www.amazon.com/dp/${asinMatch[1]}`);
+                            const asin = getAsin(productLink.href);
+                            if (asin) {
+                                links.add(`https://www.amazon.com/dp/${asin}`);
                             }
                         }
                     });
