@@ -144,21 +144,51 @@
         return keyword.replace(/[^a-zA-Z0-9]/g, '_');
     }
 
+    function parseImageBlockATF(htmlSource, landingAsinColor) {
+        // 第一步：定位目标代码块
+        const scriptRegex = /P\.when\('A'\)\.register\("ImageBlockATF",[^{]*?{([\s\S]*?)}\s*\);/;
+        const scriptMatch = htmlSource.match(scriptRegex);
+        if (!scriptMatch) return null;
+
+        // 第二步：精准提取 colorImages 对象（带嵌套处理）
+        const colorImagesRegex = /["']colorImages["']\s*:\s*({(?:[^{}]*|{(?:[^{}]*|{[^{}]*})*})*})/;
+        const colorImagesMatch = scriptMatch[0].match(colorImagesRegex);
+        if (!colorImagesMatch) return null;
+
+        // 第三步：智能清洗
+        const colorImagesData = colorImagesMatch[1]
+            .replace(/'/g, '"')                  // 统一引号
+            .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')  // 键名加引号
+            .replace(/,\s*}/g, '}')              // 修复尾部逗号
+            .replace(/\\"/g, '"')                // 处理转义
+            .replace(/Date\.now\(\)/g, '0');     // 处理时间戳
+    
+        try {
+            // 第四步：结构化解析
+            const colorImages = JSON.parse(colorImagesData);
+            return colorImages[landingAsinColor];
+        } catch (e) {
+            console.error('解析失败:', e);
+            return null;
+        }
+    }
+
     // 修改获取产品图片URL的函数
     async function getProductImages(url) {
-        try {
-            const response = await new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: url,
-                    onload: resolve,
-                    onerror: reject
-                });
+        const response = await new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                onload: resolve,
+                onerror: reject
             });
+        });
 
-            const html = response.responseText;
-            const imageUrls = [];
-            
+        const html = response.responseText;
+        let landingAsinColor = 'initial';
+        let currentColorImages = null;
+
+        try {
             // 查找包含图片数据的脚本
             const dataMatch = html.match(/jQuery\.parseJSON\('(.+?)'\)/);
             if (dataMatch) {
@@ -166,30 +196,39 @@
                     // 解析JSON数据
                     const jsonStr = dataMatch[1].replace(/\\'/g, "'");
                     const data = JSON.parse(jsonStr);
-                    
+                    if (data.landingAsinColor) {
+                        landingAsinColor = data.landingAsinColor;
+                    }
                     // 只获取当前颜色变体的图片
-                    if (data.colorImages && data.landingAsinColor) {
-                        const currentColorImages = data.colorImages[data.landingAsinColor] || [];
-                        currentColorImages.forEach(img => {
-                            const imageUrl = img.hiRes || img.large;
-                            if (imageUrl) {
-                                imageUrls.push({
-                                    url: imageUrl,
-                                    variant: img.variant || 'main'
-                                });
-                            }
-                        });
+                    if (data.colorImages) {
+                        currentColorImages = data.colorImages[landingAsinColor];
                     }
                 } catch (e) {
                     console.error('解析图片数据失败:', e);
                 }
             }
-
-            return imageUrls;
         } catch (error) {
             console.error('获取产品图片失败:', error);
-            return [];
         }
+
+        if (!currentColorImages) {
+            currentColorImages = parseImageBlockATF(html, landingAsinColor);
+        }
+
+        const imageUrls = [];
+        if (currentColorImages) {
+            currentColorImages.forEach(img => {
+                const imageUrl = img.hiRes || img.large;
+                if (imageUrl) {
+                    imageUrls.push({
+                        url: imageUrl,
+                        variant: img.variant || 'main'
+                    });
+                }
+            });
+        }
+
+        return imageUrls;
     }
 
     // 修改下载函数，添加去重逻辑
