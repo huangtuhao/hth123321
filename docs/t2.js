@@ -4,6 +4,9 @@ const OFF_PEAK_STORAGE_COST = 0.99; // 1 - 9月
 const DAYS_IN_MONTH = 30;
 const CUBIC_INCH_TO_FEET = 1 / 1728; // 1 ft³ = 1728 in³
 
+// 添加移除费率常量
+// const REMOVAL_FEE_PER_ITEM = 0.50;
+
 /**
  * 初始化库存数组
  * @returns {number[]} 每个元素代表一个库存的库龄（天数）
@@ -252,4 +255,114 @@ function test() {
     const rt = calculateTotalCost2_v2(product);
 
     console.log(rt);
+}
+
+function calculateRemovalAnalysis(productInfo, costRecords, removalParams) {
+    const results = [];
+    const totalInventory = costRecords.length;
+    const originalTotalCost = costRecords.reduce((sum, itemCosts) => 
+        sum + itemCosts.reduce((s, cost) => s + cost, 0), 0
+    );
+
+    // 计算每件商品的预期利润
+    const profitPerItem = removalParams.sellingPrice * removalParams.profitMargin;
+
+    [10, 20, 30, 40, 50, 60, 70, 80].forEach(percentage => {
+        const removalCount = Math.floor(totalInventory * (percentage / 100));
+        
+        // 计算移除成本
+        const totalRemovalCost = removalCount * (removalParams.removalFee + removalParams.shippingCost);
+        // 计算商品成本损失
+        const itemCostLoss = removalCount * removalParams.itemCost;
+        // 计算预期利润损失
+        const profitLoss = removalCount * profitPerItem;
+        
+        // 模拟移除最老的库存
+        const remainingCosts = costRecords.slice(0, totalInventory - removalCount);
+        const newStorageCost = remainingCosts.reduce((sum, itemCosts) => 
+            sum + itemCosts.reduce((s, cost) => s + cost, 0), 0
+        );
+        
+        // 计算总体影响
+        const storageSavings = originalTotalCost - newStorageCost;
+        const totalCost = totalRemovalCost + itemCostLoss;
+        const netImpact = storageSavings - totalCost - profitLoss;
+        
+        results.push({
+            percentage,
+            removalCount,
+            storageSavings,
+            removalCost: totalRemovalCost,
+            itemCostLoss,
+            profitLoss,
+            newStorageCost,
+            originalStorageCost: originalTotalCost,
+            netImpact
+        });
+    });
+
+    return results;
+}
+
+function displayRemovalAnalysis(results) {
+    const container = document.getElementById('removalResults');
+    
+    let html = `
+    <table class="removal-table">
+        <tr>
+            <th>移除比例</th>
+            <th>移除数量</th>
+            <th>仓储费节省</th>
+            <th>移除成本</th>
+            <th>商品成本</th>
+            <th>利润损失</th>
+            <th>净影响</th>
+        </tr>`;
+    
+    results.forEach(result => {
+        const impactClass = result.netImpact > 0 ? 'savings-positive' : 'savings-negative';
+        html += `
+        <tr>
+            <td>${result.percentage}%</td>
+            <td>${result.removalCount}件</td>
+            <td class="savings-positive">$${result.storageSavings.toFixed(2)}</td>
+            <td class="savings-negative">$${result.removalCost.toFixed(2)}</td>
+            <td class="savings-negative">$${result.itemCostLoss.toFixed(2)}</td>
+            <td class="savings-negative">$${result.profitLoss.toFixed(2)}</td>
+            <td class="${impactClass}">$${result.netImpact.toFixed(2)}</td>
+        </tr>`;
+    });
+    
+    html += '</table>';
+    
+    // 添加建议
+    const bestOption = results.reduce((best, current) => 
+        current.netImpact > best.netImpact ? current : best
+    );
+    
+    if (bestOption.netImpact > 0) {
+        html += `
+        <div style="margin-top: 15px; padding: 10px; background-color: #e8f5e9; border-radius: 4px;">
+            <strong>建议：</strong> 移除 ${bestOption.percentage}% 的库存（${bestOption.removalCount}件）可能是最优选择：
+            <ul>
+                <li>预计节省仓储费：$${bestOption.storageSavings.toFixed(2)}</li>
+                <li>移除成本：$${bestOption.removalCost.toFixed(2)}</li>
+                <li>商品成本损失：$${bestOption.itemCostLoss.toFixed(2)}</li>
+                <li>预期利润损失：$${bestOption.profitLoss.toFixed(2)}</li>
+                <li>净收益：$${bestOption.netImpact.toFixed(2)}</li>
+            </ul>
+        </div>`;
+    } else {
+        html += `
+        <div style="margin-top: 15px; padding: 10px; background-color: #ffebee; border-radius: 4px;">
+            <strong>提示：</strong> 考虑到所有成本因素，目前移除库存可能会带来损失。建议：
+            <ul>
+                <li>考虑调整售价或促销策略</li>
+                <li>观察市场需求变化</li>
+                <li>评估是否有更低成本的库存处理方案</li>
+            </ul>
+        </div>`;
+    }
+    
+    container.innerHTML = html;
 }

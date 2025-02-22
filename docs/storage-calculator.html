@@ -12,11 +12,11 @@
         }
         body {
             font-family: Arial, sans-serif;
-            max-width: 1400px;
             margin: 0 auto;
             padding: 10px;
             height: 100vh;
             display: flex;
+            max-width: 2000px;
             flex-direction: column;
         }
         /* 自定义滚动条样式 */
@@ -35,14 +35,14 @@
         }
         .container {
             display: grid;
-            grid-template-columns: repeat(4, minmax(300px, 1fr));
+            grid-template-columns: minmax(250px, 1fr) minmax(250px, 1fr) minmax(250px, 1fr) minmax(350px, 1.5fr) minmax(250px, 1fr);
             gap: 20px;
             flex: 1;
             min-height: 0;
             padding: 10px;
             box-sizing: border-box;
         }
-        .input-section, .shipment-section, .result-section, .history-section {
+        .input-section, .shipment-section, .result-section, .history-section, .removal-section {
             padding: 20px;
             border: 1px solid #ddd;
             border-radius: 8px;
@@ -297,6 +297,73 @@
         .share-btn:hover {
             background-color: #1976D2;
         }
+
+        .removal-analysis-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .removal-results {
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .removal-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        .removal-table th, .removal-table td {
+            border: 1px solid #ddd;
+            padding: 6px 8px;
+            text-align: right;
+        }
+
+        .removal-table th {
+            background-color: #f5f5f5;
+        }
+
+        .savings-positive {
+            color: #4CAF50;
+        }
+
+        .savings-negative {
+            color: #f44336;
+        }
+
+        .removal-section {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow-y: auto;
+            max-height: 100%;
+            box-sizing: border-box;
+            min-width: 350px;
+        }
+
+        .cost-input-group {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .cost-input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+
+        .cost-input-group input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -358,6 +425,27 @@
                 <button onclick="calculate()" class="calculate-btn">计算仓储费</button>
             </div>
             <div id="results"></div>
+        </div>
+
+        <div class="removal-section">
+            <h2>库存移除分析</h2>
+            <div class="cost-input-group">
+                <label>商品成本 ($/件)：</label>
+                <input type="number" id="itemCost" step="0.01" value="5.00">
+                
+                <label>预计销售价格 ($/件)：</label>
+                <input type="number" id="sellingPrice" step="0.01" value="15.00">
+                
+                <label>预计利润率 (%)：</label>
+                <input type="number" id="profitMargin" step="1" value="30">
+                
+                <label>移除运费 ($/件)：</label>
+                <input type="number" id="shippingCost" step="0.01" value="1.00">
+                
+                <label>亚马逊移除费 ($/件)：</label>
+                <input type="number" id="removalFee" step="0.01" value="0.50">
+            </div>
+            <div id="removalResults" class="removal-results"></div>
         </div>
 
         <div class="history-section">
@@ -570,7 +658,7 @@
             return productInfo;
         }
 
-        // 修改 calculate 函数使用新的计算方法
+        // 修改 calculate 函数
         function calculate() {
             const productInfo = getFormData();
             if (productInfo.unit === 'in3') {
@@ -640,6 +728,19 @@ ${analyzeDistribution(itemTotalCosts)}
                 stats,
                 html: resultsDiv.innerHTML
             });
+
+            // 获取移除分析所需的成本参数
+            const removalParams = {
+                itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
+                sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
+                profitMargin: parseFloat(document.getElementById('profitMargin').value) / 100 || 0,
+                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
+                removalFee: parseFloat(document.getElementById('removalFee').value) || 0
+            };
+
+            // 计算移除分析
+            const removalAnalysis = calculateRemovalAnalysis(productInfo, costRecords, removalParams);
+            displayRemovalAnalysis(removalAnalysis);
         }
 
         function analyzeDistribution(costs) {
@@ -690,21 +791,40 @@ ${analyzeDistribution(itemTotalCosts)}
         // 保存计算历史到本地存储
         function saveToHistory(input, output) {
             const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
-            // 保存时统一转换为立方英尺
-            const sizeInFt3 = input.unit === 'in3' ? input.size * CUBIC_INCH_TO_FEET : input.size;
+            const sizeInFt3 = input.size;
+            
+            // 获取移除分析参数
+            const removalParams = {
+                itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
+                sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
+                profitMargin: parseFloat(document.getElementById('profitMargin').value) || 0,
+                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
+                removalFee: parseFloat(document.getElementById('removalFee').value) || 0
+            };
+
             const record = {
                 timestamp: new Date().toISOString(),
                 input: {
                     ...input,
                     size: sizeInFt3,
-                    unit: 'ft3'  // 统一保存为立方英尺
+                    unit: 'ft3',  // 统一保存为立方英尺
+                    removalParams  // 添加移除分析参数
                 },
-                output: output,
+                output: {
+                    ...output,
+                    removalResults: document.getElementById('removalResults').innerHTML  // 保存移除分析结果
+                },
                 summary: {
                     size: sizeInFt3.toFixed(2),
                     totalQty: input.totalQty,
                     totalCost: output.totalCost.toFixed(2),
-                    months: Object.keys(output.monthlyStats).length
+                    months: Object.keys(output.monthlyStats).length,
+                    // 添加移除分析的摘要信息
+                    removalParams: {
+                        itemCost: removalParams.itemCost.toFixed(2),
+                        sellingPrice: removalParams.sellingPrice.toFixed(2),
+                        profitMargin: removalParams.profitMargin.toFixed(0)
+                    }
                 }
             };
             
@@ -723,14 +843,24 @@ ${analyzeDistribution(itemTotalCosts)}
             history.forEach((record, index) => {
                 const item = document.createElement('div');
                 item.className = 'history-item';
+                
+                // 添加移除分析参数到显示中
+                const removalSummary = record.summary.removalParams ? 
+                    `<div class="removal-summary">
+                        商品成本: $${record.summary.removalParams.itemCost} | 
+                        售价: $${record.summary.removalParams.sellingPrice} | 
+                        利润率: ${record.summary.removalParams.profitMargin}%
+                    </div>` : '';
+
                 item.innerHTML = `
                     <div class="content">
                         <div class="timestamp">${new Date(record.timestamp).toLocaleString()}</div>
                         <div class="summary">
-                            尺寸: ${record.summary.size} ft³
-                            数量: ${record.summary.totalQty}件
-                            总费用: $${record.summary.totalCost}
+                            尺寸: ${record.summary.size} ft³ | 
+                            数量: ${record.summary.totalQty}件 | 
+                            总费用: $${record.summary.totalCost} | 
                             计算月数: ${record.summary.months}个月
+                            ${removalSummary}
                         </div>
                     </div>
                     <button class="delete-history" onclick="event.stopPropagation(); deleteHistoryItem(${index})">×</button>
@@ -742,43 +872,46 @@ ${analyzeDistribution(itemTotalCosts)}
 
         // 还原历史计算记录
         function restoreCalculation(record) {
-            // 历史记录中的尺寸都是立方英尺，转换为立方英寸显示
+            // 还原尺寸和单位
             const size = record.input.size * 1728;
-            
             document.getElementById('productSize').value = size;
             document.getElementById('sizeUnit').value = 'in3';
             document.getElementById('totalQty').value = record.input.totalQty;
             
             // 还原库龄信息
             const container = document.getElementById('inventoryEntries');
-            // 重置所有数量为0
             container.querySelectorAll('.inventory-entry:not(.header):not(.total) .qty-input')
                 .forEach(input => input.value = '0');
             
-            // 填充库龄数据
             record.input.ltcQty.forEach((item, index) => {
                 const qtyInput = container.querySelectorAll('.inventory-entry:not(.header):not(.total)')[index]
                     .querySelector('.qty-input');
                 qtyInput.value = item.val;
             });
             
-            // 更新总数
-            updateTotalQuantity();
-            
             // 还原出货计划
             const shipmentContainer = document.getElementById('shipmentEntries');
             shipmentContainer.innerHTML = '';
+            
             record.input.clearanceData.forEach(item => {
                 const entry = document.createElement('div');
                 entry.className = 'shipment-entry';
-                const date = item.key;
                 entry.innerHTML = `
-                    <input type="month" value="${date.slice(0,4)}-${date.slice(4,6)}">
+                    <input type="month" value="${item.key.slice(0,4)}-${item.key.slice(4,6)}">
                     <input type="number" value="${item.val}">
                     <button class="delete-btn" onclick="removeShipmentEntry(this)">×</button>
                 `;
                 shipmentContainer.appendChild(entry);
             });
+            
+            // 还原移除分析参数
+            if (record.input.removalParams) {
+                document.getElementById('itemCost').value = record.input.removalParams.itemCost;
+                document.getElementById('sellingPrice').value = record.input.removalParams.sellingPrice;
+                document.getElementById('profitMargin').value = record.input.removalParams.profitMargin;
+                document.getElementById('shippingCost').value = record.input.removalParams.shippingCost;
+                document.getElementById('removalFee').value = record.input.removalParams.removalFee;
+            }
             
             // 显示所有删除按钮
             if (record.input.clearanceData.length > 1) {
@@ -786,11 +919,15 @@ ${analyzeDistribution(itemTotalCosts)}
                     .forEach(btn => btn.style.display = 'block');
             }
             
-            // 还原计算结果
-            document.getElementById('results').innerHTML = record.output.html;
+            // 更新总数
+            updateTotalQuantity();
             
-            // 滚动到计算结果
-            document.querySelector('.result-section').scrollIntoView({ behavior: 'smooth' });
+            // 自动触发计算
+            setTimeout(() => {
+                calculate();
+                // 滚动到计算结果
+                document.querySelector('.result-section').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
         }
 
         // 清除历史记录
@@ -858,26 +995,35 @@ ${analyzeDistribution(itemTotalCosts)}
             document.getElementById('batchShipment').value = '';
         }
 
-        // 分享功能
+        // 修改分享功能
         function shareCalculator() {
             const data = getFormData();
+            
+            // 获取移除分析参数
+            const removalParams = {
+                itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
+                sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
+                profitMargin: parseFloat(document.getElementById('profitMargin').value) || 0,
+                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
+                removalFee: parseFloat(document.getElementById('removalFee').value) || 0
+            };
+
             const shareData = {
                 size: data.size,
                 unit: data.unit,
                 inventory: data.ltcQty,
-                shipments: data.clearanceData
+                shipments: data.clearanceData,
+                removalParams  // 添加移除分析参数
             };
             
-            // 将数据转换为 base64 编码，避免 URL 过长和特殊字符问题
+            // 将数据转换为 base64 编码
             const encodedData = btoa(JSON.stringify(shareData));
             const shareUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
             
             // 复制链接到剪贴板
             navigator.clipboard.writeText(shareUrl).then(() => {
-                const shareBtn = document.querySelector('.share-btn');
                 const shareText = document.getElementById('shareText');
                 const originalText = shareText.textContent;
-                
                 shareText.textContent = '已复制链接！';
                 setTimeout(() => {
                     shareText.textContent = originalText;
@@ -885,7 +1031,7 @@ ${analyzeDistribution(itemTotalCosts)}
             });
         }
 
-        // 从 URL 参数加载数据
+        // 修改加载分享数据的功能
         function loadSharedData() {
             const urlParams = new URLSearchParams(window.location.search);
             const encodedData = urlParams.get('data');
@@ -922,6 +1068,15 @@ ${analyzeDistribution(itemTotalCosts)}
                         shipmentContainer.appendChild(entry);
                     });
                     
+                    // 还原移除分析参数
+                    if (data.removalParams) {
+                        document.getElementById('itemCost').value = data.removalParams.itemCost;
+                        document.getElementById('sellingPrice').value = data.removalParams.sellingPrice;
+                        document.getElementById('profitMargin').value = data.removalParams.profitMargin;
+                        document.getElementById('shippingCost').value = data.removalParams.shippingCost;
+                        document.getElementById('removalFee').value = data.removalParams.removalFee;
+                    }
+                    
                     // 显示所有删除按钮
                     if (data.shipments.length > 1) {
                         shipmentContainer.querySelectorAll('.delete-btn')
@@ -941,6 +1096,118 @@ ${analyzeDistribution(itemTotalCosts)}
                     console.error('Failed to load shared data:', e);
                 }
             }
+        }
+
+        // 添加新的分析函数
+        function calculateRemovalAnalysis(productInfo, costRecords, removalParams) {
+            const results = [];
+            const totalInventory = costRecords.length;
+            const originalTotalCost = costRecords.reduce((sum, itemCosts) => 
+                sum + itemCosts.reduce((s, cost) => s + cost, 0), 0
+            );
+
+            // 计算每件商品的预期利润
+            const profitPerItem = removalParams.sellingPrice * removalParams.profitMargin;
+
+            [10, 20, 30, 40, 50, 60, 70, 80].forEach(percentage => {
+                const removalCount = Math.floor(totalInventory * (percentage / 100));
+                
+                // 计算移除成本
+                const totalRemovalCost = removalCount * (removalParams.removalFee + removalParams.shippingCost);
+                // 计算商品成本损失
+                const itemCostLoss = removalCount * removalParams.itemCost;
+                // 计算预期利润损失
+                const profitLoss = removalCount * profitPerItem;
+                
+                // 模拟移除最老的库存
+                const remainingCosts = costRecords.slice(0, totalInventory - removalCount);
+                const newStorageCost = remainingCosts.reduce((sum, itemCosts) => 
+                    sum + itemCosts.reduce((s, cost) => s + cost, 0), 0
+                );
+                
+                // 计算总体影响
+                const storageSavings = originalTotalCost - newStorageCost;
+                const totalCost = totalRemovalCost + itemCostLoss;
+                const netImpact = storageSavings - totalCost - profitLoss;
+                
+                results.push({
+                    percentage,
+                    removalCount,
+                    storageSavings,
+                    removalCost: totalRemovalCost,
+                    itemCostLoss,
+                    profitLoss,
+                    newStorageCost,
+                    originalStorageCost: originalTotalCost,
+                    netImpact
+                });
+            });
+
+            return results;
+        }
+
+        // 添加显示函数
+        function displayRemovalAnalysis(results) {
+            const container = document.getElementById('removalResults');
+            
+            let html = `
+            <table class="removal-table">
+                <tr>
+                    <th>移除比例</th>
+                    <th>移除数量</th>
+                    <th>仓储费节省</th>
+                    <th>移除成本</th>
+                    <th>商品成本</th>
+                    <th>利润损失</th>
+                    <th>净影响</th>
+                </tr>`;
+            
+            results.forEach(result => {
+                const impactClass = result.netImpact > 0 ? 'savings-positive' : 'savings-negative';
+                html += `
+                <tr>
+                    <td>${result.percentage}%</td>
+                    <td>${result.removalCount}件</td>
+                    <td class="savings-positive">$${result.storageSavings.toFixed(2)}</td>
+                    <td class="savings-negative">$${result.removalCost.toFixed(2)}</td>
+                    <td class="savings-negative">$${result.itemCostLoss.toFixed(2)}</td>
+                    <td class="savings-negative">$${result.profitLoss.toFixed(2)}</td>
+                    <td class="${impactClass}">$${result.netImpact.toFixed(2)}</td>
+                </tr>`;
+            });
+            
+            html += '</table>';
+            
+            // 添加建议
+            const bestOption = results.reduce((best, current) => 
+                current.netImpact > best.netImpact ? current : best
+            );
+            
+            if (bestOption.netImpact > 0) {
+                html += `
+                <div style="margin-top: 15px; padding: 10px; background-color: #e8f5e9; border-radius: 4px;">
+                    <strong>建议：</strong> 移除 ${bestOption.percentage}% 的库存（${bestOption.removalCount}件）可能是最优选择：
+                    <ul>
+                        <li>预计节省仓储费：$${bestOption.storageSavings.toFixed(2)}</li>
+                        <li>移除成本：$${bestOption.removalCost.toFixed(2)}</li>
+                        <li>商品成本损失：$${bestOption.itemCostLoss.toFixed(2)}</li>
+                        <li>预期利润损失：$${bestOption.profitLoss.toFixed(2)}</li>
+                        <li>净收益：$${bestOption.netImpact.toFixed(2)}</li>
+                    </ul>
+                </div>`;
+            } else {
+                html += `
+                <div style="margin-top: 15px; padding: 10px; background-color: #ffebee; border-radius: 4px;">
+                    <strong>提示：</strong> 考虑到所有成本因素，目前移除库存可能会带来损失。建议：
+                    <ul>
+                        <li>考虑调整售价或促销策略</li>
+                        <li>观察市场需求变化</li>
+                        <li>评估是否有更低成本的库存处理方案</li>
+                    </ul>
+                </div>`;
+            }
+            
+            container.innerHTML = html;
         }
     </script>
 </body>
