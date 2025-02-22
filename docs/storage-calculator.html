@@ -439,9 +439,6 @@
                 <label>预计利润率 (%)：</label>
                 <input type="number" id="profitMargin" step="1" value="30">
                 
-                <label>移除运费 ($/件)：</label>
-                <input type="number" id="shippingCost" step="0.01" value="1.00">
-                
                 <label>亚马逊移除费 ($/件)：</label>
                 <input type="number" id="removalFee" step="0.01" value="0.50">
             </div>
@@ -734,7 +731,6 @@ ${analyzeDistribution(itemTotalCosts)}
                 itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
                 sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
                 profitMargin: parseFloat(document.getElementById('profitMargin').value) / 100 || 0,
-                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
                 removalFee: parseFloat(document.getElementById('removalFee').value) || 0
             };
 
@@ -793,22 +789,12 @@ ${analyzeDistribution(itemTotalCosts)}
             const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
             const sizeInFt3 = input.size;
             
-            // 获取移除分析参数
-            const removalParams = {
-                itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
-                sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
-                profitMargin: parseFloat(document.getElementById('profitMargin').value) || 0,
-                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
-                removalFee: parseFloat(document.getElementById('removalFee').value) || 0
-            };
-
             const record = {
                 timestamp: new Date().toISOString(),
                 input: {
                     ...input,
                     size: sizeInFt3,
                     unit: 'ft3',  // 统一保存为立方英尺
-                    removalParams  // 添加移除分析参数
                 },
                 output: {
                     ...output,
@@ -819,12 +805,6 @@ ${analyzeDistribution(itemTotalCosts)}
                     totalQty: input.totalQty,
                     totalCost: output.totalCost.toFixed(2),
                     months: Object.keys(output.monthlyStats).length,
-                    // 添加移除分析的摘要信息
-                    removalParams: {
-                        itemCost: removalParams.itemCost.toFixed(2),
-                        sellingPrice: removalParams.sellingPrice.toFixed(2),
-                        profitMargin: removalParams.profitMargin.toFixed(0)
-                    }
                 }
             };
             
@@ -844,14 +824,6 @@ ${analyzeDistribution(itemTotalCosts)}
                 const item = document.createElement('div');
                 item.className = 'history-item';
                 
-                // 添加移除分析参数到显示中
-                const removalSummary = record.summary.removalParams ? 
-                    `<div class="removal-summary">
-                        商品成本: $${record.summary.removalParams.itemCost} | 
-                        售价: $${record.summary.removalParams.sellingPrice} | 
-                        利润率: ${record.summary.removalParams.profitMargin}%
-                    </div>` : '';
-
                 item.innerHTML = `
                     <div class="content">
                         <div class="timestamp">${new Date(record.timestamp).toLocaleString()}</div>
@@ -860,7 +832,6 @@ ${analyzeDistribution(itemTotalCosts)}
                             数量: ${record.summary.totalQty}件 | 
                             总费用: $${record.summary.totalCost} | 
                             计算月数: ${record.summary.months}个月
-                            ${removalSummary}
                         </div>
                     </div>
                     <button class="delete-history" onclick="event.stopPropagation(); deleteHistoryItem(${index})">×</button>
@@ -909,7 +880,6 @@ ${analyzeDistribution(itemTotalCosts)}
                 document.getElementById('itemCost').value = record.input.removalParams.itemCost;
                 document.getElementById('sellingPrice').value = record.input.removalParams.sellingPrice;
                 document.getElementById('profitMargin').value = record.input.removalParams.profitMargin;
-                document.getElementById('shippingCost').value = record.input.removalParams.shippingCost;
                 document.getElementById('removalFee').value = record.input.removalParams.removalFee;
             }
             
@@ -1004,7 +974,6 @@ ${analyzeDistribution(itemTotalCosts)}
                 itemCost: parseFloat(document.getElementById('itemCost').value) || 0,
                 sellingPrice: parseFloat(document.getElementById('sellingPrice').value) || 0,
                 profitMargin: parseFloat(document.getElementById('profitMargin').value) || 0,
-                shippingCost: parseFloat(document.getElementById('shippingCost').value) || 0,
                 removalFee: parseFloat(document.getElementById('removalFee').value) || 0
             };
 
@@ -1013,7 +982,7 @@ ${analyzeDistribution(itemTotalCosts)}
                 unit: data.unit,
                 inventory: data.ltcQty,
                 shipments: data.clearanceData,
-                removalParams  // 添加移除分析参数
+                removalParams
             };
             
             // 将数据转换为 base64 编码
@@ -1073,7 +1042,6 @@ ${analyzeDistribution(itemTotalCosts)}
                         document.getElementById('itemCost').value = data.removalParams.itemCost;
                         document.getElementById('sellingPrice').value = data.removalParams.sellingPrice;
                         document.getElementById('profitMargin').value = data.removalParams.profitMargin;
-                        document.getElementById('shippingCost').value = data.removalParams.shippingCost;
                         document.getElementById('removalFee').value = data.removalParams.removalFee;
                     }
                     
@@ -1113,7 +1081,7 @@ ${analyzeDistribution(itemTotalCosts)}
                 const removalCount = Math.floor(totalInventory * (percentage / 100));
                 
                 // 计算移除成本
-                const totalRemovalCost = removalCount * (removalParams.removalFee + removalParams.shippingCost);
+                const totalRemovalCost = removalCount * removalParams.removalFee;
                 // 计算商品成本损失
                 const itemCostLoss = removalCount * removalParams.itemCost;
                 // 计算预期利润损失
