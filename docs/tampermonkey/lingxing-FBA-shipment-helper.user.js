@@ -309,7 +309,7 @@
                     .join(' ');
 
                 const shopName = globalInfo.sellerName.replace(/-[A-Z]{2,}(\s*-\s*\S+)?$/, '').trim();
-                const creatorName = globalInfo.createByName;
+                const creatorName = globalInfo.createByName || document.querySelector('.logout-btn').textContent;
                 const date = new Date().toLocaleDateString('zh-CN', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
                 const destination = shipment.warehouseId;
                 const confirmationId = shipment.shipmentConfirmationId;
