@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>货件与箱唛信息一体化处理工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .section {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 8px;
+        }
+        textarea {
+            height: 200px;
+            font-family: inherit;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.secondary {
+            background-color: #2196F3;
+        }
+        button.secondary:hover {
+            background-color: #0b7dda;
+        }
+        .result-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .result-text {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 4px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1;
+            left: 50%;
+            bottom: 30px;
+        }
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+        @keyframes fadein {
+            from {bottom: 0; opacity: 0;}
+            to {bottom: 30px; opacity: 1;}
+        }
+        @keyframes fadeout {
+            from {bottom: 30px; opacity: 1;}
+            to {bottom: 0; opacity: 0;}
+        }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+        }
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .workflow-arrow {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 10px 0;
+            color: #666;
+            font-size: 24px;
+        }
+        .process-all {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .boxmai-output {
+            white-space: pre-wrap;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 20px;
+            background-color: white;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>货件与箱唛信息一体化处理工具</h1>
+    
+    <div class="container">
+        <!-- 第一部分: 货件解析 -->
+        <div class="section">
+            <h2>步骤1: 货件信息转换</h2>
+            <textarea id="shipment-input" placeholder="请在此处粘贴货件文本"></textarea>
+            <textarea id="template" placeholder="模板加载中..."></textarea>
+            <div class="actions">
+                <button onclick="convertShipmentText()">转换货件信息</button>
+            </div>
+            <div id="shipment-results"></div>
+        </div>
+
+        <div class="process-all">
+            <button class="secondary" onclick="processAllForBoxmai()">一键处理所有货件信息生成箱唛</button>
+        </div>
+
+        <!-- 第二部分: 箱唛明细 -->
+        <div class="section">
+            <h2>步骤2: 箱唛明细生成</h2>
+            <textarea id="boxmai-input" placeholder="在此处输入或从上方传递货件信息"></textarea>
+            <div class="actions">
+                <button onclick="convertBoxmaiText()">生成箱唛明细</button>
+                <button onclick="copyBoxmaiOutput()">复制箱唛结果</button>
+            </div>
+            <h3>箱唛明细结果：</h3>
+            <div id="boxmai-output" class="boxmai-output"></div>
+        </div>
+    </div>
+
+    <div id="toast">文本已复制到剪贴板</div>
+
+    <script>
+        // 页面加载时初始化模板
+        document.addEventListener('DOMContentLoaded', () => {
+            const templateTextarea = document.getElementById('template');
+            const currentDate = getCurrentDate();
+            templateTextarea.value = `土豪-简优美国-${currentDate}-AKZ02猫耳粉1件 紫2件-@-飞帆盐田卡派`;
+        });
+
+        // 生成当前日期（yymmdd格式）
+        function getCurrentDate() {
+            const date = new Date();
+            const year = date.getFullYear().toString().slice(-2);
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}${month}${day}`;
+        }
+
+        // 货件信息转换功能
+        function convertShipmentText() {
+            const input = document.getElementById('shipment-input').value;
+            const template = document.getElementById('template').value;
+            const resultsDiv = document.getElementById('shipment-results');
+            
+            const shipmentRegex = /货件\s*\d+[\s\S]*?此货件的状态为\s*处理中/g;
+            const shipments = input.match(shipmentRegex);
+            
+            if (!shipments) {
+                resultsDiv.innerHTML = "<p>未找到有效的货件信息</p>";
+                return;
+            }
+
+            const results = shipments.map(shipment => {
+                const idMatch = shipment.match(/货件编号：(.*)/);
+                const addressMatch = shipment.match(/收货地址：(\w+)/);
+                
+                return (idMatch && addressMatch) 
+                    ? template.replace('@', `${addressMatch[1].trim()}-${idMatch[1].trim()}`)
+                    : '';
+            }).filter(Boolean);
+
+            resultsDiv.innerHTML = results.map((result, index) => `
+                <div class="result-item">
+                    <div class="checkbox-container">
+                        <input type="checkbox" class="result-checkbox" id="checkbox-${index}" checked>
+                    </div>
+                    <textarea class="result-text">${result}</textarea>
+                    <div class="actions">
+                        <button onclick="copyShipmentText(${index})">复制</button>
+                        <button class="secondary" onclick="useForBoxmai(${index})">用于箱唛解析</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 复制货件信息
+        function copyShipmentText(index) {
+            const textElements = document.querySelectorAll('.result-text');
+            navigator.clipboard.writeText(textElements[index].value)
+                .then(() => showToast())
+                .catch(err => console.error('复制失败:', err));
+        }
+
+        // 将货件信息传递给箱唛处理
+        function useForBoxmai(index) {
+            const textElements = document.querySelectorAll('.result-text');
+            document.getElementById('boxmai-input').value = textElements[index].value;
+            // 滚动到箱唛处理部分
+            document.getElementById('boxmai-input').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 处理所有选中的货件生成箱唛
+        function processAllForBoxmai() {
+            const checkboxes = document.querySelectorAll('.result-checkbox:checked');
+            if (checkboxes.length === 0) {
+                showToast('请先选择至少一个货件信息');
+                return;
+            }
+            
+            let combinedText = '';
+            checkboxes.forEach(checkbox => {
+                const index = checkbox.id.split('-')[1];
+                const textElement = document.querySelectorAll('.result-text')[index];
+                combinedText += textElement.value + '\n货件名称：' + textElement.value + '\n\n';
+            });
+            
+            document.getElementById('boxmai-input').value = combinedText;
+            document.getElementById('boxmai-input').scrollIntoView({ behavior: 'smooth' });
+            // 自动执行箱唛解析
+            convertBoxmaiText();
+        }
+
+        // 箱唛明细生成功能
+        function convertBoxmaiText() {
+            const input = document.getElementById('boxmai-input').value;
+            const output = document.getElementById('boxmai-output');
+            
+            const nameRegex = /货件名称：(.+)/g;
+            const nameMatches = [...input.matchAll(nameRegex)];
+            
+            if (nameMatches.length === 0) {
+                // 如果没有找到货件名称标记，尝试将整个输入视为货件名称
+                const lines = input.split('\n').filter(line => line.trim());
+                nameMatches.push(...lines.map(line => [null, line]));
+            }
+            
+            let result = '';
+
+            nameMatches.forEach((match) => {
+                const name = match[1].replace('重命名', '');
+                const parts = name.split('-');
+                if (parts.length >= 5) {
+                    const itemInfo = parts[parts.length - 4];
+                    const lastThreeParts = parts.slice(-3).join('-');
+                    
+                    result += `${lastThreeParts}\n`;
+
+                    const items = itemInfo.split(' ');
+                    let currentBox = 1;
+                    items.forEach(item => {
+                        const match = item.match(/(.*?)(\d+)件$/);
+                        if (match) {
+                            const [, color, quantity] = match;
+                            if (parseInt(quantity) > 0) {
+                                const endBox = currentBox + parseInt(quantity) - 1;
+                                result += `${currentBox}-${endBox}：${color}\n`;
+                                currentBox = endBox + 1;
+                            }
+                        }
+                    });
+                    result += '\n';
+                }
+            });
+
+            output.textContent = result.trim();
+        }
+
+        // 复制箱唛明细结果
+        function copyBoxmaiOutput() {
+            const output = document.getElementById('boxmai-output');
+            const text = output.textContent;
+            
+            if (!text.trim()) {
+                showToast('没有内容可复制');
+                return;
+            }
+            
+            navigator.clipboard.writeText(text)
+                .then(() => showToast())
+                .catch(err => console.error('复制失败:', err));
+        }
+
+        // 显示提示信息
+        function showToast(message = '文本已复制到剪贴板') {
+            const toast = document.getElementById("toast");
+            toast.textContent = message;
+            toast.className = "show";
+            setTimeout(() => toast.className = "", 3000);
+        }
+    </script>
+</body>
+</html>

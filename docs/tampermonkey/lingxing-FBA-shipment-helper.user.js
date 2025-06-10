@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Lingxing FBA Shipment Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.4
-// @description  (V2.4) 无阻塞通知版，使用系统自带的消息组件替代alert，提升用户体验。
+// @version      2.5
+// @description  (V2.5) 完美体验版，为结果页的复制操作实现自定义Toast提示，彻底告别alert。
 // @author       Your Assistant & You
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
@@ -126,7 +126,6 @@
     // 弹窗与通知模块 (Modal & Notification Module)
     // =================================================================================
     const modal = {
-        // ... (modal code remains the same)
         create(id, title, bodyContent, footerButtons) {
             const existingModal = document.getElementById(id);
             if (existingModal) existingModal.remove();
@@ -165,7 +164,6 @@
         }
     };
 
-    // 修改点：创建通知辅助模块
     const notify = {
         _showMessage(type, message) {
             try {
@@ -173,7 +171,6 @@
                 if (vueInstance && vueInstance.$message) {
                     vueInstance.$message[type](message);
                 } else {
-                    // Fallback to alert if the message system is not available
                     alert(message);
                 }
             } catch (e) {
@@ -181,15 +178,9 @@
                 alert(message);
             }
         },
-        info(message) {
-            this._showMessage('info', message);
-        },
-        warning(message) {
-            this._showMessage('warning', message);
-        },
-        error(message) {
-            this._showMessage('error', message);
-        }
+        info(message) { this._showMessage('info', message); },
+        warning(message) { this._showMessage('warning', message); },
+        error(message) { this._showMessage('error', message); }
     };
 
 
@@ -207,7 +198,6 @@
                 }
 
                 const globalInfo = vueInstance.info;
-                // 关键检查点：shipmentList是否存在于第三个tab
                 const shipmentList = document.querySelector('#pane-3 .info-container')?.__vue__?.shipmentList;
 
                 if (!globalInfo || !shipmentList) {
@@ -216,14 +206,12 @@
                 return { vueInstance, globalInfo, shipmentList };
             } catch (e) {
                 console.error('获取页面初始数据失败:', e);
-                // 修改点：使用新的错误提示和通知方式
                 notify.error('请确认已经切换到第3步："配送服务"，如果未切换，请点击头部"配送服务"文字进行切换');
                 return null;
             }
         },
 
         async fetchPackingDetails(vueInstance, shipment) {
-            // ... (this function remains the same)
             try {
                 const { code, msg, data } = await vueInstance.$gwPost("/amz-sta-server/inbound-packing/getShipmentPackingDetail", {
                     shipmentId: shipment.shipmentId,
@@ -246,7 +234,6 @@
             const productList = initialData.shipmentList?.[0]?.itemList || [];
 
             if (productList.length === 0) {
-                // 修改点：使用新的通知方式
                 notify.warning("当前计划中未找到任何商品。");
                 return;
             }
@@ -291,7 +278,6 @@
                     const allPackingDetails = await Promise.all(packingPromises);
                     this.generateFinalOutput(initialData, allPackingDetails, updatedShortNameMap);
                 } catch (error) {
-                    // 修改点：使用新的通知方式
                     notify.error("处理失败: " + error.message);
                 } finally {
                     modal.hideLoading();
@@ -300,7 +286,6 @@
         },
 
         generateFinalOutput(initialData, allPackingDetails, shortNameMap) {
-            // ... (this function remains the same)
             const { globalInfo, shipmentList } = initialData;
             let shipmentNamesArray = [];
             let packingDetailsOutput = '';
@@ -350,8 +335,8 @@
             this.showResultsInNewTab(shipmentNamesArray, packingDetailsOutput.trim());
         },
 
+        // 修改点：为结果页注入Toast通知的CSS和JS
         showResultsInNewTab(namesArray, details) {
-            // ... (this function remains the same, including the alert in the new tab)
             let namesHtml = '';
             if (namesArray.length > 0) {
                 namesArray.forEach((name, index) => {
@@ -385,6 +370,27 @@
                         .input-group input { flex-grow: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
                         .input-group button { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
                         #output-details { min-height: 600px; }
+                        
+                        /* Toast CSS */
+                        .toast-notification {
+                            position: fixed;
+                            top: 20px;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            background-color: #007aff;
+                            color: white;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                            z-index: 10000;
+                            opacity: 0;
+                            transition: opacity 0.4s ease, top 0.4s ease;
+                            font-size: 14px;
+                        }
+                        .toast-notification.show {
+                            top: 40px;
+                            opacity: 1;
+                        }
                     </style>
                 </head>
                 <body>
@@ -399,12 +405,43 @@
                         <button class="btn-copy" onclick="copyText('output-details')">复制箱唛详情</button>
                     </div>
                     <script>
-                        // 此处的 alert 必须保留，因为它运行在新页面的独立环境中，无法访问原始页面的 $message
+                        let toastTimer;
+                        function showToast(message) {
+                            // 清除上一个toast（如果存在）
+                            const existingToast = document.querySelector('.toast-notification');
+                            if (existingToast) {
+                                existingToast.remove();
+                                clearTimeout(toastTimer);
+                            }
+
+                            const toast = document.createElement('div');
+                            toast.className = 'toast-notification';
+                            toast.textContent = message;
+                            document.body.appendChild(toast);
+
+                            // 触发显示动画
+                            setTimeout(() => {
+                                toast.classList.add('show');
+                            }, 10); // 短暂延迟确保transition生效
+
+                            // 2秒后自动隐藏
+                            toastTimer = setTimeout(() => {
+                                toast.classList.remove('show');
+                                // 动画结束后从DOM中移除
+                                setTimeout(() => {
+                                    if (toast.parentNode) {
+                                        toast.parentNode.removeChild(toast);
+                                    }
+                                }, 500);
+                            }, 2000);
+                        }
+
                         function copyText(elementId) {
                             const element = document.getElementById(elementId);
                             element.select();
                             document.execCommand('copy');
-                            alert('已复制到剪贴板！');
+                            // 调用新的toast函数替代alert
+                            showToast('已复制到剪贴板！');
                         }
                     <\/script>
                 </body>
