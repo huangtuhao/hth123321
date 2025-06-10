@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Lingxing FBA Shipment Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2
-// @description  (V2.2) 终极稳定版，增加创建人名称的备用获取方案，增强稳定性。
+// @version      2.4
+// @description  (V2.4) 无阻塞通知版，使用系统自带的消息组件替代alert，提升用户体验。
 // @author       Your Assistant & You
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
@@ -123,38 +123,32 @@
 
 
     // =================================================================================
-    // 弹窗模块 (Modal Module)
+    // 弹窗与通知模块 (Modal & Notification Module)
     // =================================================================================
     const modal = {
+        // ... (modal code remains the same)
         create(id, title, bodyContent, footerButtons) {
             const existingModal = document.getElementById(id);
             if (existingModal) existingModal.remove();
-
             const overlay = document.createElement('div');
             overlay.className = 'lx-modal-overlay';
             overlay.id = id;
-
             const content = document.createElement('div');
             content.className = 'lx-modal-content';
-
             const header = document.createElement('div');
             header.className = 'lx-modal-header';
             header.innerText = title;
-
             const body = document.createElement('div');
             body.className = 'lx-modal-body';
             body.innerHTML = bodyContent;
-
             content.appendChild(header);
             content.appendChild(body);
-
             if (footerButtons) {
                 const footer = document.createElement('div');
                 footer.className = 'lx-modal-footer';
                 footer.innerHTML = footerButtons;
                 content.appendChild(footer);
             }
-
             overlay.appendChild(content);
             document.body.appendChild(overlay);
             return overlay;
@@ -171,6 +165,33 @@
         }
     };
 
+    // 修改点：创建通知辅助模块
+    const notify = {
+        _showMessage(type, message) {
+            try {
+                const vueInstance = document.querySelector('#app')?.__vue__;
+                if (vueInstance && vueInstance.$message) {
+                    vueInstance.$message[type](message);
+                } else {
+                    // Fallback to alert if the message system is not available
+                    alert(message);
+                }
+            } catch (e) {
+                console.error("Notification system failed, falling back to alert.", e);
+                alert(message);
+            }
+        },
+        info(message) {
+            this._showMessage('info', message);
+        },
+        warning(message) {
+            this._showMessage('warning', message);
+        },
+        error(message) {
+            this._showMessage('error', message);
+        }
+    };
+
 
     // =================================================================================
     // 核心功能模块 (Core Logic)
@@ -182,38 +203,33 @@
                 if (!vueInstance) throw new Error("无法找到 Vue 实例。");
 
                 if (!vueInstance.info) {
-                    console.log("vueInstance.info 未找到，尝试主动获取...");
-                    const localTaskId = new URLSearchParams(window.location.search).get('localTaskId');
-                    if (localTaskId) {
-                        await vueInstance.getDetail(localTaskId);
-                        console.log("getDetail 调用完成。");
-                    } else {
-                        throw new Error("无法从URL中获取 localTaskId。");
-                    }
+                    await vueInstance.getDetail(new URLSearchParams(window.location.search).get('localTaskId'));
                 }
 
                 const globalInfo = vueInstance.info;
-                const shipmentList = document.querySelector('#pane-3 .info-container').__vue__.shipmentList;
+                // 关键检查点：shipmentList是否存在于第三个tab
+                const shipmentList = document.querySelector('#pane-3 .info-container')?.__vue__?.shipmentList;
 
                 if (!globalInfo || !shipmentList) {
-                    throw new Error("无法获取 globalInfo 或 shipmentList。");
+                    throw new Error("无法获取 globalInfo 或 shipmentList，可能未切换到第三步。");
                 }
                 return { vueInstance, globalInfo, shipmentList };
             } catch (e) {
                 console.error('获取页面初始数据失败:', e);
-                alert('错误：脚本无法读取页面数据。可能是页面结构已更新或数据加载失败。详情请查看控制台。');
+                // 修改点：使用新的错误提示和通知方式
+                notify.error('请确认已经切换到第3步："配送服务"，如果未切换，请点击头部"配送服务"文字进行切换');
                 return null;
             }
         },
 
         async fetchPackingDetails(vueInstance, shipment) {
+            // ... (this function remains the same)
             try {
                 const { code, msg, data } = await vueInstance.$gwPost("/amz-sta-server/inbound-packing/getShipmentPackingDetail", {
                     shipmentId: shipment.shipmentId,
                     inboundPlanId: shipment.inboundPlanId,
                     sid: shipment.sid
                 });
-
                 if (code === 1 && data) {
                     return data.shipmentPackingVOS || [];
                 } else {
@@ -230,7 +246,8 @@
             const productList = initialData.shipmentList?.[0]?.itemList || [];
 
             if (productList.length === 0) {
-                alert("当前计划中未找到任何商品。");
+                // 修改点：使用新的通知方式
+                notify.warning("当前计划中未找到任何商品。");
                 return;
             }
 
@@ -274,7 +291,8 @@
                     const allPackingDetails = await Promise.all(packingPromises);
                     this.generateFinalOutput(initialData, allPackingDetails, updatedShortNameMap);
                 } catch (error) {
-                    alert("处理失败: " + error.message);
+                    // 修改点：使用新的通知方式
+                    notify.error("处理失败: " + error.message);
                 } finally {
                     modal.hideLoading();
                 }
@@ -282,14 +300,13 @@
         },
 
         generateFinalOutput(initialData, allPackingDetails, shortNameMap) {
+            // ... (this function remains the same)
             const { globalInfo, shipmentList } = initialData;
             let shipmentNamesArray = [];
             let packingDetailsOutput = '';
-
             shipmentList.forEach((shipment, index) => {
                 const packingVos = allPackingDetails[index];
                 if (!packingVos || packingVos.length === 0) return;
-
                 const aggregatedBoxCounts = new Map();
                 packingVos.forEach(box => {
                     if (!aggregatedBoxCounts.has(box.sku)) {
@@ -297,26 +314,19 @@
                     }
                     aggregatedBoxCounts.get(box.sku).count += 1;
                 });
-
                 const contentSummary = Array.from(aggregatedBoxCounts.entries())
                     .map(([sku, data]) => {
                         const shortName = shortNameMap[sku] || sku;
                         return `${shortName}${data.count}箱`;
                     })
                     .join(' ');
-
                 const shopName = globalInfo.sellerName.replace(/-[A-Z]{2,}(\s*-\s*\S+)?$/, '').trim();
-                
-                // 修改点：增加创建人名称的备用获取方案
-                const creatorName = globalInfo.createByName || document.querySelector('.logout-btn')?.textContent.trim();
-                
+                const creatorName = globalInfo.createByName || document.querySelector('#app')?.__vue__?.$store?.state?.userName;
                 const date = new Date().toLocaleDateString('zh-CN', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
                 const destination = shipment.warehouseId;
                 const confirmationId = shipment.shipmentConfirmationId;
-
                 const singleShipmentName = `${shopName}-${creatorName}-${date}-${contentSummary}-${destination}-${confirmationId}-${TEMPLATE_SUFFIX}`;
                 shipmentNamesArray.push(singleShipmentName);
-
                 packingDetailsOutput += `${destination}-${confirmationId}-${TEMPLATE_SUFFIX}\n`;
                 let currentGroup = null;
                 packingVos.forEach((box, boxIndex) => {
@@ -337,11 +347,11 @@
                 });
                  packingDetailsOutput += `\n`;
             });
-
             this.showResultsInNewTab(shipmentNamesArray, packingDetailsOutput.trim());
         },
 
         showResultsInNewTab(namesArray, details) {
+            // ... (this function remains the same, including the alert in the new tab)
             let namesHtml = '';
             if (namesArray.length > 0) {
                 namesArray.forEach((name, index) => {
@@ -355,7 +365,6 @@
             } else {
                 namesHtml = '<p>没有找到有效的货件命名。</p>';
             }
-
             const newTab = window.open('', '_blank');
             newTab.document.write(`
                 <!DOCTYPE html>
@@ -385,12 +394,12 @@
                         <div id="shipment-names-container">
                             ${namesHtml}
                         </div>
-
                         <h2>箱唛详情</h2>
                         <textarea id="output-details">${details}</textarea>
                         <button class="btn-copy" onclick="copyText('output-details')">复制箱唛详情</button>
                     </div>
                     <script>
+                        // 此处的 alert 必须保留，因为它运行在新页面的独立环境中，无法访问原始页面的 $message
                         function copyText(elementId) {
                             const element = document.getElementById(elementId);
                             element.select();
