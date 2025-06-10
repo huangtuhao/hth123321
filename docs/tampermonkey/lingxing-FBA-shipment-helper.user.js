@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Lingxing FBA Shipment Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  (V2.1) 终极简化版，直接使用itemList作为数据源，逻辑更清晰。在领星ERP发货计划相关页面，动态显示生成按钮。
+// @version      2.2
+// @description  (V2.2) 终极稳定版，增加创建人名称的备用获取方案，增强稳定性。
 // @author       Your Assistant & You
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
@@ -227,8 +227,6 @@
 
         async handleShortNames(initialData) {
             let shortNameMap = await GM_getValue(SHORT_NAME_STORAGE_KEY, {});
-
-            // 终极简化：直接使用 itemList 作为权威的、不重复的商品列表
             const productList = initialData.shipmentList?.[0]?.itemList || [];
 
             if (productList.length === 0) {
@@ -236,7 +234,6 @@
                 return;
             }
 
-            // 直接遍历 productList 来构建弹窗内容，不再需要中间的Map
             let tableRows = '';
             productList.forEach(product => {
                 const { sku, productName } = product;
@@ -309,7 +306,10 @@
                     .join(' ');
 
                 const shopName = globalInfo.sellerName.replace(/-[A-Z]{2,}(\s*-\s*\S+)?$/, '').trim();
-                const creatorName = globalInfo.createByName || document.querySelector('.logout-btn').textContent;
+                
+                // 修改点：增加创建人名称的备用获取方案
+                const creatorName = globalInfo.createByName || document.querySelector('.logout-btn')?.textContent.trim();
+                
                 const date = new Date().toLocaleDateString('zh-CN', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
                 const destination = shipment.warehouseId;
                 const confirmationId = shipment.shipmentConfirmationId;
