@@ -452,7 +452,7 @@
 
         const isTargetPage = () => {
             const currentUrl = window.location.href;
-            return currentUrl.includes('/erp/msupply/AddSendToAmazon') || currentUrl.includes('/erp/msupply/editSendToAmazon');
+            return ['erp/msupply/SendToAmazonDetail', '/erp/msupply/AddSendToAmazon', '/erp/msupply/editSendToAmazon'].some(v => currentUrl.includes(v));
         };
 
         const toggleButtonVisibility = () => {
