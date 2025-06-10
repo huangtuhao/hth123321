@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         领星ERP发货单箱唛生成器
+// @name         Lingxing FBA Shipment Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @description  流程优化：先编辑简称，后获取装箱数据。增强了数据获取的稳定性，并在新页面展示结果。
-// @author       Your Assistant
+// @version      2.1
+// @description  (V2.1) 终极简化版，直接使用itemList作为数据源，逻辑更清晰。在领星ERP发货计划相关页面，动态显示生成按钮。
+// @author       Your Assistant & You
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -176,13 +176,11 @@
     // 核心功能模块 (Core Logic)
     // =================================================================================
     const mainApp = {
-        // 修改点 2: 增强数据获取的健壮性
         async fetchInitialData() {
             try {
                 const vueInstance = document.querySelector('.sta-detail').__vue__;
                 if (!vueInstance) throw new Error("无法找到 Vue 实例。");
 
-                // 如果 info 不存在，则主动调用 getDetail 获取
                 if (!vueInstance.info) {
                     console.log("vueInstance.info 未找到，尝试主动获取...");
                     const localTaskId = new URLSearchParams(window.location.search).get('localTaskId');
@@ -223,31 +221,25 @@
                 }
             } catch (error) {
                  console.error(`调用 $gwPost 失败 for ${shipment.shipmentId}:`, error);
-                 throw error; // 向上抛出错误
+                 throw error;
             }
         },
 
-        // 修改点 1: 流程重构，此函数现在是流程的后半部分
         async handleShortNames(initialData) {
             let shortNameMap = await GM_getValue(SHORT_NAME_STORAGE_KEY, {});
-            const allSkus = new Map();
 
-            // 从已加载的计划商品列表中获取SKU信息，而不是从装箱详情中
-            const productList = initialData.globalInfo.inboundPlanProductList || [];
-            productList.forEach(product => {
-                if (product && product.sku && !allSkus.has(product.sku)) {
-                    allSkus.set(product.sku, product.productName);
-                }
-            });
+            // 终极简化：直接使用 itemList 作为权威的、不重复的商品列表
+            const productList = initialData.shipmentList?.[0]?.itemList || [];
 
-            if (allSkus.size === 0) {
+            if (productList.length === 0) {
                 alert("当前计划中未找到任何商品。");
                 return;
             }
 
-            // --- 显示简称编辑弹窗 ---
+            // 直接遍历 productList 来构建弹窗内容，不再需要中间的Map
             let tableRows = '';
-            allSkus.forEach((productName, sku) => {
+            productList.forEach(product => {
+                const { sku, productName } = product;
                 const defaultValue = shortNameMap[sku] || productName;
                 tableRows += `
                     <tr>
@@ -255,6 +247,7 @@
                         <td><input type="text" data-sku="${sku}" value="${defaultValue.replace(/"/g, '&quot;')}"></td>
                     </tr>`;
             });
+
             const body = `<p style="margin-bottom: 15px; color: #909399;">请检查或修改以下商品的简称。系统会默认填入您上次保存的简称或完整品名。</p>
                           <table class="lx-input-table">
                             <thead><tr><th>商品信息</th><th>简称</th></tr></thead>
@@ -266,9 +259,7 @@
 
             document.getElementById('lx-cancel-btn').onclick = () => modal.hide('lx-shortname-modal');
 
-            // --- 将核心逻辑移到“保存”按钮的点击事件中 ---
             document.getElementById('lx-save-btn').onclick = async () => {
-                // 1. 保存简称
                 let updatedShortNameMap = {};
                 inputModal.querySelectorAll('input[data-sku]').forEach(input => {
                     const sku = input.dataset.sku;
@@ -280,13 +271,10 @@
                 await GM_setValue(SHORT_NAME_STORAGE_KEY, updatedShortNameMap);
                 modal.hide('lx-shortname-modal');
 
-                // 2. 显示加载动画，并开始获取装箱数据
                 modal.showLoading();
                 try {
                     const packingPromises = initialData.shipmentList.map(s => this.fetchPackingDetails(initialData.vueInstance, s));
                     const allPackingDetails = await Promise.all(packingPromises);
-
-                    // 3. 生成并显示最终结果
                     this.generateFinalOutput(initialData, allPackingDetails, updatedShortNameMap);
                 } catch (error) {
                     alert("处理失败: " + error.message);
@@ -416,20 +404,17 @@
             newTab.document.close();
         },
 
-        // 修改点 1: 流程重构，run函数现在只负责启动流程
         async run() {
             modal.showLoading();
             try {
                 const initialData = await this.fetchInitialData();
-                modal.hideLoading(); // 获取完初始数据就关闭加载
+                modal.hideLoading();
 
                 if (initialData) {
-                    // 直接调用 handleShortNames，它内部包含了后续所有流程
                     await this.handleShortNames(initialData);
                 }
             } catch (error) {
                 modal.hideLoading();
-                // fetchInitialData 内部已经 alert 了，这里可以只在控制台打印
                 console.error("主流程启动失败:", error);
             }
         }
@@ -452,7 +437,7 @@
 
         const isTargetPage = () => {
             const currentUrl = window.location.href;
-            return ['erp/msupply/SendToAmazonDetail', '/erp/msupply/AddSendToAmazon', '/erp/msupply/editSendToAmazon'].some(v => currentUrl.includes(v));
+            return ['/erp/msupply/SendToAmazonDetail', '/erp/msupply/AddSendToAmazon', '/erp/msupply/editSendToAmazon'].some(v => currentUrl.includes(v));
         };
 
         const toggleButtonVisibility = () => {
