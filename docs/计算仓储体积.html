@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品销售体积计算器</title>
+    <!-- 引入SheetJS库用于解析Excel文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 15px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #0056b3;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+        }
+        .file-upload-area {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 2px dashed #007bff;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        .file-upload-area label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        #calculateBtn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        #calculateBtn:hover {
+            background-color: #0056b3;
+        }
+        #calculateBtn:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+        #results {
+            margin-top: 25px;
+        }
+        .result-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }
+        .result-section h3 {
+            margin-top: 0;
+            color: #343a40;
+        }
+        #dailySalesVolumeResult table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        #dailySalesVolumeResult th, #dailySalesVolumeResult td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            text-align: left;
+        }
+        #dailySalesVolumeResult th {
+            background-color: #ced4da;
+        }
+        #logs {
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #777;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            padding: 10px;
+            background-color: #fefefe;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>商品销售体积计算器</h1>
+        <p>请分别上传“销量统计”和“产品导出”的XLSX文件，然后点击计算按钮。</p>
+
+        <div class="file-upload-area">
+            <label for="salesFile">1. 销量统计文件 (包含'订单量'工作表)</label>
+            <input type="file" id="salesFile" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </div>
+
+        <div class="file-upload-area">
+            <label for="productFile">2. 产品尺寸文件 (包含'产品'工作表)</label>
+            <input type="file" id="productFile" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </div>
+
+        <button id="calculateBtn">计算体积</button>
+
+        <div id="results" style="display:none;">
+            <h2>计算结果</h2>
+            <div id="inventoryVolumeResult" class="result-section"></div>
+            <div id="dailySalesVolumeResult" class="result-section"></div>
+        </div>
+        
+        <div id="logs">
+            <h4>处理日志:</h4>
+        </div>
+    </div>
+
+    <script>
+        const salesFileInput = document.getElementById('salesFile');
+        const productFileInput = document.getElementById('productFile');
+        const calculateBtn = document.getElementById('calculateBtn');
+        const resultsDiv = document.getElementById('results');
+        const inventoryResultDiv = document.getElementById('inventoryVolumeResult');
+        const dailySalesResultDiv = document.getElementById('dailySalesVolumeResult');
+        const logsDiv = document.getElementById('logs');
+
+        function log(message) {
+            logsDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        calculateBtn.addEventListener('click', handleCalculation);
+
+        function handleCalculation() {
+            // 0. 重置界面并禁用按钮
+            calculateBtn.disabled = true;
+            calculateBtn.textContent = '正在计算...';
+            resultsDiv.style.display = 'none';
+            logsDiv.innerHTML = '<h4>处理日志:</h4>';
+
+            const salesFile = salesFileInput.files[0];
+            const productFile = productFileInput.files[0];
+
+            if (!salesFile || !productFile) {
+                alert('请确保两个文件都已经上传！');
+                log('错误：文件未完全上传。');
+                resetButton();
+                return;
+            }
+
+            // 使用Promise并行读取文件
+            Promise.all([
+                readFileAsArrayBuffer(salesFile),
+                readFileAsArrayBuffer(productFile)
+            ]).then(([salesBuffer, productBuffer]) => {
+                log('文件读取成功。');
+                processFiles(salesBuffer, productBuffer);
+            }).catch(error => {
+                log(`错误: ${error.message}`);
+                alert(`文件读取失败: ${error.message}`);
+                resetButton();
+            });
+        }
+
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(new Error(`读取文件 ${file.name} 失败`));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function processFiles(salesBuffer, productBuffer) {
+            try {
+                log('开始解析Excel文件...');
+                // 1. 解析Excel文件
+                const salesWorkbook = XLSX.read(salesBuffer, { type: 'array' });
+                const productWorkbook = XLSX.read(productBuffer, { type: 'array' });
+
+                // 2. 从指定工作表获取JSON数据
+                const orderSheetName = '订单量';
+                const productSheetName = '产品';
+
+                if (!salesWorkbook.SheetNames.includes(orderSheetName)) {
+                    throw new Error(`销量统计文件中未找到名为 "${orderSheetName}" 的工作表。`);
+                }
+                if (!productWorkbook.SheetNames.includes(productSheetName)) {
+                    throw new Error(`产品尺寸文件中未找到名为 "${productSheetName}" 的工作表。`);
+                }
+
+                const ordersData = XLSX.utils.sheet_to_json(salesWorkbook.Sheets[orderSheetName]);
+                const productsData = XLSX.utils.sheet_to_json(productWorkbook.Sheets[productSheetName]);
+                log('Excel文件解析完成，数据已转换为JSON。');
+
+                // 3. 创建产品尺寸映射表以便快速查找
+                // 键是SKU，值是{l, w, h}对象
+                const productDimensionsMap = new Map();
+                productsData.forEach(p => {
+                    const sku = p['*SKU'] || p['SKU']; // 兼容'*SKU'和'SKU'两种列名
+                    const length = parseFloat(p['包装规格长']);
+                    const width = parseFloat(p['包装规格宽']);
+                    const height = parseFloat(p['包装规格高']);
+
+                    if (sku && !isNaN(length) && !isNaN(width) && !isNaN(height)) {
+                        productDimensionsMap.set(String(sku), { l: length, w: width, h: height });
+                    }
+                });
+                log(`创建了 ${productDimensionsMap.size} 个SKU的尺寸映射。`);
+
+                // 4. 定义转换常量
+                const CM_PER_INCH = 2.54;
+                const INCHES_PER_FOOT = 12;
+                const CM_PER_FOOT = CM_PER_INCH * INCHES_PER_FOOT; // 30.48
+                const CUBIC_CM_PER_CUBIC_FOOT = Math.pow(CM_PER_FOOT, 3); // cm^3 -> ft^3
+
+                // 5. 初始化计算变量
+                let totalInventoryVolumeFt3 = 0;
+                const dailySalesVolumeFt3 = {};
+
+                // 动态识别日期列 (格式为 YYYY-MM-DD)
+                const dateColumns = Object.keys(ordersData[0] || {}).filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
+                log(`识别到以下日期列: ${dateColumns.join(', ')}`);
+                dateColumns.forEach(date => dailySalesVolumeFt3[date] = 0);
+
+                // 6. 遍历订单数据进行计算
+                let processedRows = 0;
+                let missingSkuCount = 0;
+                ordersData.forEach(order => {
+                    const sku = String(order.SKU);
+                    const dimensions = productDimensionsMap.get(sku);
+
+                    if (!dimensions) {
+                        if (missingSkuCount < 5) { // 只记录前5个缺失的SKU，避免日志过长
+                           log(`警告: 在产品尺寸文件中找不到SKU "${sku}" 的尺寸信息，将跳过此产品。`);
+                        }
+                        missingSkuCount++;
+                        return; // 跳过没有尺寸信息的SKU
+                    }
+
+                    // 计算单个产品的体积 (立方厘米 -> 立方英尺)
+                    const volumeCm3 = dimensions.l * dimensions.w * dimensions.h;
+                    const volumeFt3 = volumeCm3 / CUBIC_CM_PER_CUBIC_FOOT;
+
+                    // 6a. 计算可用库存总体积
+                    const availableInventory = parseInt(order['可用库存'], 10) || 0;
+                    totalInventoryVolumeFt3 += availableInventory * volumeFt3;
+
+                    // 6b. 计算每日销售体积
+                    dateColumns.forEach(date => {
+                        const quantitySold = parseInt(order[date], 10) || 0;
+                        if (quantitySold > 0) {
+                            dailySalesVolumeFt3[date] += quantitySold * volumeFt3;
+                        }
+                    });
+                    processedRows++;
+                });
+                log(`处理了 ${processedRows} 行订单数据。`);
+                if (missingSkuCount > 0) {
+                    log(`总共有 ${missingSkuCount} 个SKU因为缺失尺寸信息而被跳过。`);
+                }
+
+                // 7. 显示结果
+                displayResults(totalInventoryVolumeFt3, dailySalesVolumeFt3);
+
+            } catch (error) {
+                log(`处理失败: ${error.message}`);
+                alert(`处理过程中发生错误: ${error.message}`);
+            } finally {
+                resetButton();
+            }
+        }
+
+        function displayResults(inventoryVolume, dailyVolumes) {
+            log('开始渲染计算结果。');
+            // 1. 显示库存总体积
+            inventoryResultDiv.innerHTML = `
+                <h3>1. 当前可用库存总体积</h3>
+                <p><strong>${inventoryVolume.toFixed(4)}</strong> 立方英尺 (cubic feet)</p>
+            `;
+
+            // 2. 显示每日销售体积
+            let dailySalesHtml = `
+                <h3>2. 每日销售商品体积</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>销售总体积 (立方英尺)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            const sortedDates = Object.keys(dailyVolumes).sort();
+            sortedDates.forEach(date => {
+                dailySalesHtml += `
+                    <tr>
+                        <td>${date}</td>
+                        <td>${dailyVolumes[date].toFixed(4)}</td>
+                    </tr>
+                `;
+            });
+            dailySalesHtml += `</tbody></table>`;
+            dailySalesResultDiv.innerHTML = dailySalesHtml;
+
+            resultsDiv.style.display = 'block';
+            log('计算完成并已显示结果。');
+        }
+
+        function resetButton() {
+            calculateBtn.disabled = false;
+            calculateBtn.textContent = '计算体积';
+        }
+    </script>
+</body>
+</html>

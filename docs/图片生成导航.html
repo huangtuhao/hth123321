@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>进度条式图片导航生成工具</title>
+    <style>
+        /* --- 基本页面样式 --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        /* --- 主容器 --- */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        p.description {
+            text-align: center;
+            margin-top: -15px;
+            margin-bottom: 30px;
+            color: #777;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* --- 图片条目样式 --- */
+        #entries-container {
+            border: 1px dashed #d0dbe4;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 100px;
+        }
+
+        .image-entry {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background-color: #fdfdfd;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+        }
+        .image-entry:last-child {
+            margin-bottom: 0;
+        }
+        .image-entry.highlight {
+            transform: scale(1.01);
+            box-shadow: 0 0 8px rgba(220, 53, 69, 0.5);
+            border-color: #dc3545;
+        }
+
+        .image-preview {
+            width: 70px;
+            height: 70px;
+            border-radius: 6px;
+            background-color: #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            font-size: 12px;
+            text-align: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .image-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .inputs-group {
+            flex-grow: 1;
+        }
+        .inputs-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        .inputs-group input[type="file"] {
+            margin-top: 8px;
+        }
+
+        .entry-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .entry-controls button {
+            background: none;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .entry-controls button:hover {
+            background-color: #e9ecef;
+        }
+        .entry-controls button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .delete-btn { color: #e74c3c; }
+        .delete-btn:hover { background-color: #e74c3c; color: white; }
+
+        /* --- 主控制按钮 --- */
+        .main-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .main-controls .buttons-row {
+            display: flex;
+            gap: 15px;
+        }
+        .main-controls button {
+            flex-grow: 1;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+        .main-controls button:hover {
+            background-color: #0056b3;
+        }
+        #add-entry-btn {
+            background-color: #28a745;
+        }
+        #add-entry-btn:hover {
+            background-color: #218838;
+        }
+        .options-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            gap: 10px;
+        }
+        .options-row label {
+            color: #555;
+            font-weight: 500;
+        }
+        .options-row select {
+            padding: 5px 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        /* --- 结果区域 --- */
+        #results-container {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .result-item {
+            text-align: center;
+        }
+        .result-item img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .result-item a {
+            display: inline-block;
+            background-color: #fd7e14;
+            color: white;
+            padding: 10px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+        .result-item a:hover {
+            background-color: #e86a00;
+        }
+        
+        #spinner {
+            display: none;
+            margin: 20px auto;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>进度条式图片导航生成工具</h1>
+        <p class="description">添加并排序图片，工具将在顶部或底部生成一个带阴影和高光的悬浮式导航栏，并自动将标题置于其中。</p>
+
+        <div id="entries-container">
+            <!-- 图片条目将在这里动态添加 -->
+        </div>
+
+        <div class="main-controls">
+            <div class="options-row">
+                <label for="nav-position">导航栏位置:</label>
+                <select id="nav-position">
+                    <option value="bottom" selected>底部</option>
+                    <option value="top">顶部</option>
+                </select>
+            </div>
+            <div class="buttons-row">
+                <button id="add-entry-btn">＋ 添加图片条目</button>
+                <button id="generate-all-btn">🚀 生成所有图片</button>
+            </div>
+        </div>
+
+        <div id="results-area">
+            <h2 id="results-title" style="display:none; margin-top: 40px;">生成结果</h2>
+            <div id="spinner"></div>
+            <div id="results-container"></div>
+        </div>
+    </div>
+
+    <!-- 用于克隆的模板 -->
+    <template id="image-entry-template">
+        <div class="image-entry">
+            <div class="image-preview"><span>预览</span></div>
+            <div class="inputs-group">
+                <input type="text" class="title-input" placeholder="在此输入图片标题 (20字符内)" maxlength="20">
+                <input type="file" class="image-input" accept="image/png, image/jpeg">
+            </div>
+            <div class="entry-controls">
+                <button class="move-up-btn" title="上移">↑</button>
+                <button class="move-down-btn" title="下移">↓</button>
+                <button class="delete-btn" title="删除">×</button>
+            </div>
+        </div>
+    </template>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const entriesContainer = document.getElementById('entries-container');
+        const addEntryBtn = document.getElementById('add-entry-btn');
+        const generateAllBtn = document.getElementById('generate-all-btn');
+        const navPositionSelect = document.getElementById('nav-position');
+        const resultsContainer = document.getElementById('results-container');
+        const resultsTitle = document.getElementById('results-title');
+        const spinner = document.getElementById('spinner');
+        const template = document.getElementById('image-entry-template');
+
+        function updateControlButtons() {
+            const entries = entriesContainer.querySelectorAll('.image-entry');
+            entries.forEach((entry, index) => {
+                entry.querySelector('.move-up-btn').disabled = (index === 0);
+                entry.querySelector('.move-down-btn').disabled = (index === entries.length - 1);
+            });
+        }
+
+        function addEventListenersToEntry(entry) {
+            entry.querySelector('.image-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    const previewContainer = entry.querySelector('.image-preview');
+                    reader.onload = (event) => {
+                        previewContainer.innerHTML = `<img src="${event.target.result}" alt="preview">`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            entry.querySelector('.delete-btn').addEventListener('click', () => {
+                entry.remove();
+                updateControlButtons();
+            });
+            entry.querySelector('.move-up-btn').addEventListener('click', () => {
+                if (entry.previousElementSibling) {
+                    entriesContainer.insertBefore(entry, entry.previousElementSibling);
+                    updateControlButtons();
+                }
+            });
+            entry.querySelector('.move-down-btn').addEventListener('click', () => {
+                if (entry.nextElementSibling) {
+                    entriesContainer.insertBefore(entry.nextElementSibling, entry);
+                    updateControlButtons();
+                }
+            });
+        }
+
+        function addNewEntry() {
+            const newEntry = template.content.cloneNode(true);
+            const entryDiv = newEntry.querySelector('.image-entry');
+            entriesContainer.appendChild(newEntry);
+            addEventListenersToEntry(entryDiv);
+            updateControlButtons();
+        }
+
+        async function handleGenerateAll() {
+            resultsContainer.innerHTML = '';
+            resultsTitle.style.display = 'none';
+            spinner.style.display = 'block';
+
+            const entries = entriesContainer.querySelectorAll('.image-entry');
+            if (entries.length === 0) {
+                alert('请先添加至少一个图片条目！');
+                spinner.style.display = 'none';
+                return;
+            }
+
+            const navPosition = navPositionSelect.value;
+
+            const processingQueue = [];
+            for (const entry of entries) {
+                const fileInput = entry.querySelector('.image-input');
+                const titleInput = entry.querySelector('.title-input');
+                const file = fileInput.files[0];
+                const title = titleInput.value.trim();
+
+                if (!file || !title) {
+                    alert('请确保每个条目都已上传图片并填写了标题！');
+                    entry.classList.add('highlight');
+                    setTimeout(() => entry.classList.remove('highlight'), 2000);
+                    spinner.style.display = 'none';
+                    return;
+                }
+                processingQueue.push({ file, title, type: file.type });
+            }
+
+            const allTitles = processingQueue.map(item => item.title);
+            resultsTitle.style.display = 'block';
+
+            for (const item of processingQueue) {
+                try {
+                    const imageDataUrl = await createTitledImage(item.file, item.title, allTitles, item.type, navPosition);
+                    displayResult(imageDataUrl, item.file.name, item.type);
+                } catch (error) {
+                    console.error('处理图片时发生错误:', error);
+                    alert(`处理图片 "${item.file.name}" 时失败，请检查控制台获取详情。`);
+                }
+            }
+            
+            spinner.style.display = 'none';
+        }
+
+        function createTitledImage(file, highlightTitle, allTitles, mimeType, navPosition) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+
+                        // 步骤 1: 绘制原始图片
+                        ctx.drawImage(img, 0, 0);
+
+                        // 步骤 2: 绘制进度条式导航栏
+                        // --- 定义尺寸 ---
+                        const navBarHeight = canvas.height * 0.07;
+                        const navBarY = (navPosition === 'top') ? 0 : canvas.height - navBarHeight;
+                        const segmentWidth = canvas.width / allTitles.length;
+
+                        // --- 定义样式 (混合方案) ---
+                        const styles = {
+                            barBg: 'rgba(0, 0, 0, 0.4)',
+                            separator: 'rgba(0, 0, 0, 0.6)',
+                            innerStroke: 'rgba(255, 255, 255, 0.4)',
+                            shadow: {
+                                color: 'rgba(0, 0, 0, 0.5)',
+                                blur: 15,
+                                offsetY: (navPosition === 'top') ? 5 : -5
+                            },
+                            active: { bg: '#007BFF', text: 'white', fontWeight: 'bold' },
+                            inactive: { bg: 'transparent', text: 'rgba(255, 255, 255, 0.7)', fontWeight: 'normal' }
+                        };
+
+                        // --- 绘制带阴影的导航条背景 (关键改动) ---
+                        // 2a. 设置阴影上下文
+                        ctx.shadowColor = styles.shadow.color;
+                        ctx.shadowBlur = styles.shadow.blur;
+                        ctx.shadowOffsetY = styles.shadow.offsetY;
+
+                        // 2b. 绘制导航条背景，此时它会自动投下阴影
+                        ctx.fillStyle = styles.barBg;
+                        ctx.fillRect(0, navBarY, canvas.width, navBarHeight);
+
+                        // 2c. 立即重置阴影，以免影响后续绘制
+                        ctx.shadowBlur = 0;
+                        ctx.shadowOffsetY = 0;
+
+                        // --- 循环绘制每个分段 (无阴影) ---
+                        allTitles.forEach((title, index) => {
+                            const is_active = (title === highlightTitle);
+                            const style = is_active ? styles.active : styles.inactive;
+                            const segmentX = index * segmentWidth;
+
+                            ctx.fillStyle = style.bg;
+                            ctx.fillRect(segmentX, navBarY, segmentWidth, navBarHeight);
+
+                            const maxFontSize = navBarHeight * 0.4;
+                            const textPadding = segmentWidth * 0.1;
+                            let fontSize = maxFontSize;
+                            ctx.font = `${style.fontWeight} ${fontSize}px "Segoe UI", Arial, sans-serif`;
+                            
+                            while(ctx.measureText(title).width > segmentWidth - textPadding && fontSize > 8) {
+                                fontSize--;
+                                ctx.font = `${style.fontWeight} ${fontSize}px "Segoe UI", Arial, sans-serif`;
+                            }
+
+                            ctx.fillStyle = style.text;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(title, segmentX + segmentWidth / 2, navBarY + navBarHeight / 2);
+
+                            if (index < allTitles.length - 1) {
+                                ctx.fillStyle = styles.separator;
+                                ctx.fillRect(segmentX + segmentWidth - 1, navBarY, 2, navBarHeight);
+                            }
+                        });
+
+                        // --- 绘制高光内描边 ---
+                        const strokeY = (navPosition === 'top') ? navBarY + navBarHeight - 1 : navBarY;
+                        ctx.fillStyle = styles.innerStroke;
+                        ctx.fillRect(0, strokeY, canvas.width, 1);
+
+                        // --- 输出图片 ---
+                        if (mimeType === 'image/jpeg') {
+                            resolve(canvas.toDataURL('image/jpeg', 0.95));
+                        } else {
+                            resolve(canvas.toDataURL('image/png'));
+                        }
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        function displayResult(imageDataUrl, originalFileName, mimeType) {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'result-item';
+
+            const img = document.createElement('img');
+            img.src = imageDataUrl;
+
+            const link = document.createElement('a');
+            link.href = imageDataUrl;
+
+            const baseName = originalFileName.split('.').slice(0, -1).join('.');
+            const extension = (mimeType === 'image/jpeg') ? 'jpg' : 'png';
+            link.download = `nav-added-${baseName}.${extension}`;
+            link.textContent = `下载此图片 (.${extension})`;
+
+            resultItem.appendChild(img);
+            resultItem.appendChild(link);
+            resultsContainer.appendChild(resultItem);
+        }
+
+        // --- 初始化 ---
+        addEntryBtn.addEventListener('click', addNewEntry);
+        generateAllBtn.addEventListener('click', handleGenerateAll);
+        addNewEntry(); // 页面加载时自动添加第一个条目
+    });
+    </script>
+
+</body>
+</html>
