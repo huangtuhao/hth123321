@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>进度条式图片导航生成工具</title>
+    <title>进度条式图片导航生成工具 (高级版)</title>
     <style>
         /* --- 基本页面样式 --- */
         body {
@@ -158,23 +158,43 @@
         #add-entry-btn:hover {
             background-color: #218838;
         }
-        .options-row {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px;
+        
+        /* --- 新增：样式选项 --- */
+        .style-options {
             background-color: #f8f9fa;
-            border-radius: 6px;
-            gap: 10px;
+            border-radius: 8px;
+            padding: 10px 15px;
+            border: 1px solid #e9ecef;
+            align-items: center;
         }
-        .options-row label {
+        .option-item {
+            display: inline-block;
+            align-items: center;
+            margin: 5px 20px;
+        }
+        .option-item label {
             color: #555;
             font-weight: 500;
+            white-space: nowrap;
         }
-        .options-row select {
+        .option-item select, .option-item input {
             padding: 5px 8px;
             border-radius: 4px;
             border: 1px solid #ccc;
+            vertical-align: middle;
+        }
+        .option-item input[type="color"] {
+            padding: 2px;
+            min-width: 40px;
+            height: 32px;
+        }
+        .option-item input[type="range"] {
+            padding: 0;
+        }
+        .range-value {
+            font-weight: bold;
+            color: #007bff;
+            min-width: 30px;
         }
 
         /* --- 结果区域 --- */
@@ -228,19 +248,35 @@
 
     <div class="container">
         <h1>进度条式图片导航生成工具</h1>
-        <p class="description">添加并排序图片，工具将在顶部或底部生成一个带阴影和高光的悬浮式导航栏，并自动将标题置于其中。</p>
+        <p class="description">添加并排序图片，自定义导航栏样式，工具将生成带悬浮导航栏的新图片，并自动保存您的设置。</p>
 
         <div id="entries-container">
             <!-- 图片条目将在这里动态添加 -->
         </div>
 
         <div class="main-controls">
-            <div class="options-row">
-                <label for="nav-position">导航栏位置:</label>
-                <select id="nav-position">
-                    <option value="bottom" selected>底部</option>
-                    <option value="top">顶部</option>
-                </select>
+            <div class="style-options">
+                <div class="option-item">
+                    <label for="nav-position">位置:</label>
+                    <select id="nav-position">
+                        <option value="bottom" selected>底部</option>
+                        <option value="top">顶部</option>
+                    </select>
+                </div>
+                <div class="option-item">
+                    <label for="active-color">高亮颜色:</label>
+                    <input type="color" id="active-color" value="#007bff">
+                </div>
+                 <div class="option-item">
+                    <label for="active-opacity">高亮不透明度:</label>
+                    <input type="range" id="active-opacity" min="0" max="1" step="0.05" value="0.6">
+                    <span id="active-opacity-value" class="range-value">0.7</span>
+                </div>
+                <div class="option-item">
+                    <label for="inactive-opacity">背景不透明度:</label>
+                    <input type="range" id="inactive-opacity" min="0" max="1" step="0.05" value="0.4">
+                    <span id="inactive-opacity-value" class="range-value">0.4</span>
+                </div>
             </div>
             <div class="buttons-row">
                 <button id="add-entry-btn">＋ 添加图片条目</button>
@@ -260,7 +296,7 @@
         <div class="image-entry">
             <div class="image-preview"><span>预览</span></div>
             <div class="inputs-group">
-                <input type="text" class="title-input" placeholder="在此输入图片标题 (20字符内)" maxlength="20">
+                <input type="text" class="title-input" placeholder="在此输入图片标题 (25字符内)" maxlength="25">
                 <input type="file" class="image-input" accept="image/png, image/jpeg">
             </div>
             <div class="entry-controls">
@@ -273,14 +309,26 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM 元素获取 ---
         const entriesContainer = document.getElementById('entries-container');
         const addEntryBtn = document.getElementById('add-entry-btn');
         const generateAllBtn = document.getElementById('generate-all-btn');
-        const navPositionSelect = document.getElementById('nav-position');
         const resultsContainer = document.getElementById('results-container');
         const resultsTitle = document.getElementById('results-title');
         const spinner = document.getElementById('spinner');
         const template = document.getElementById('image-entry-template');
+
+        // --- 设置控件 ---
+        const navPositionSelect = document.getElementById('nav-position');
+        const activeColorInput = document.getElementById('active-color');
+        const activeOpacityInput = document.getElementById('active-opacity');
+        const inactiveOpacityInput = document.getElementById('inactive-opacity');
+        const activeOpacityValue = document.getElementById('active-opacity-value');
+        const inactiveOpacityValue = document.getElementById('inactive-opacity-value');
+        
+        const SETTINGS_KEY = 'navToolSettings';
+
+        // --- 核心功能函数 ---
 
         function updateControlButtons() {
             const entries = entriesContainer.querySelectorAll('.image-entry');
@@ -339,8 +387,13 @@
                 spinner.style.display = 'none';
                 return;
             }
-
-            const navPosition = navPositionSelect.value;
+            
+            const generationOptions = {
+                navPosition: navPositionSelect.value,
+                activeColor: activeColorInput.value,
+                activeOpacity: parseFloat(activeOpacityInput.value),
+                inactiveOpacity: parseFloat(inactiveOpacityInput.value)
+            };
 
             const processingQueue = [];
             for (const entry of entries) {
@@ -364,7 +417,7 @@
 
             for (const item of processingQueue) {
                 try {
-                    const imageDataUrl = await createTitledImage(item.file, item.title, allTitles, item.type, navPosition);
+                    const imageDataUrl = await createTitledImage(item.file, item.title, allTitles, item.type, generationOptions);
                     displayResult(imageDataUrl, item.file.name, item.type);
                 } catch (error) {
                     console.error('处理图片时发生错误:', error);
@@ -375,7 +428,12 @@
             spinner.style.display = 'none';
         }
 
-        function createTitledImage(file, highlightTitle, allTitles, mimeType, navPosition) {
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : null;
+        }
+
+        function createTitledImage(file, highlightTitle, allTitles, mimeType, options) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
@@ -389,74 +447,97 @@
                         // 步骤 1: 绘制原始图片
                         ctx.drawImage(img, 0, 0);
 
-                        // 步骤 2: 绘制进度条式导航栏
-                        // --- 定义尺寸 ---
+                        // 步骤 2: 定义尺寸和样式
                         const navBarHeight = canvas.height * 0.07;
-                        const navBarY = (navPosition === 'top') ? 0 : canvas.height - navBarHeight;
+                        const navBarY = (options.navPosition === 'top') ? 0 : canvas.height - navBarHeight;
                         const segmentWidth = canvas.width / allTitles.length;
-
-                        // --- 定义样式 (混合方案) ---
+                        
+                        const activeRgb = hexToRgb(options.activeColor);
                         const styles = {
-                            barBg: 'rgba(0, 0, 0, 0.4)',
-                            separator: 'rgba(0, 0, 0, 0.6)',
+                            separator: 'rgba(0, 0, 0, 0.4)',
                             innerStroke: 'rgba(255, 255, 255, 0.4)',
                             shadow: {
-                                color: 'rgba(0, 0, 0, 0.5)',
-                                blur: 15,
-                                offsetY: (navPosition === 'top') ? 5 : -5
+                                color: 'rgba(0, 0, 0, 0.45)', // 阴影颜色可以稍微调整
+                                blur: 18, // 模糊半径
+                                offsetY: (options.navPosition === 'top') ? 6 : -6 // 阴影偏移
                             },
-                            active: { bg: '#007BFF', text: 'white', fontWeight: 'bold' },
-                            inactive: { bg: 'transparent', text: 'rgba(255, 255, 255, 0.7)', fontWeight: 'normal' }
+                            active: { 
+                                bg: `rgba(${activeRgb}, ${options.activeOpacity})`, 
+                                text: 'white', 
+                                fontWeight: 'bold' 
+                            },
+                            inactive: { 
+                                bg: `rgba(0, 0, 0, ${options.inactiveOpacity})`, 
+                                text: 'rgba(255, 255, 255, 0.7)', 
+                                fontWeight: 'normal' 
+                            }
                         };
 
-                        // --- 绘制带阴影的导航条背景 (关键改动) ---
-                        // 2a. 设置阴影上下文
+                        // *** 采用 Clip 方案绘制投影 ***
+
+                        // 步骤 3: 仅在主图片区域绘制导航栏的投影
+                        ctx.save(); // 保存当前状态
+
+                        // 3.1: 创建一个不包含导航栏区域的裁切路径
+                        ctx.beginPath();
+                        if (options.navPosition === 'top') {
+                            // 裁切区域为导航栏下方的所有区域
+                            ctx.rect(0, navBarHeight, canvas.width, canvas.height - navBarHeight);
+                        } else {
+                            // 裁切区域为导航栏上方的所有区域
+                            ctx.rect(0, 0, canvas.width, canvas.height - navBarHeight);
+                        }
+                        ctx.clip(); // 应用裁切
+
+                        // 3.2: 设置阴影样式
                         ctx.shadowColor = styles.shadow.color;
                         ctx.shadowBlur = styles.shadow.blur;
                         ctx.shadowOffsetY = styles.shadow.offsetY;
 
-                        // 2b. 绘制导航条背景，此时它会自动投下阴影
-                        ctx.fillStyle = styles.barBg;
+                        // 3.3: 绘制阴影投射物
+                        // 这个矩形本身位于裁切区域之外，所以不会被绘制，但它的阴影会投射到裁切区内
+                        ctx.fillStyle = '#000'; // 颜色不重要，只要不透明即可
                         ctx.fillRect(0, navBarY, canvas.width, navBarHeight);
+                        
+                        ctx.restore(); // 恢复画布状态，移除裁切和阴影设置
 
-                        // 2c. 立即重置阴影，以免影响后续绘制
-                        ctx.shadowBlur = 0;
-                        ctx.shadowOffsetY = 0;
-
-                        // --- 循环绘制每个分段 (无阴影) ---
+                        // 步骤 4: 正常绘制导航栏本身的内容
                         allTitles.forEach((title, index) => {
                             const is_active = (title === highlightTitle);
                             const style = is_active ? styles.active : styles.inactive;
                             const segmentX = index * segmentWidth;
 
+                            // 绘制分段背景
                             ctx.fillStyle = style.bg;
                             ctx.fillRect(segmentX, navBarY, segmentWidth, navBarHeight);
 
+                            // 动态计算字体大小并绘制文字
                             const maxFontSize = navBarHeight * 0.4;
                             const textPadding = segmentWidth * 0.1;
                             let fontSize = maxFontSize;
                             ctx.font = `${style.fontWeight} ${fontSize}px "Segoe UI", Arial, sans-serif`;
-                            
                             while(ctx.measureText(title).width > segmentWidth - textPadding && fontSize > 8) {
                                 fontSize--;
                                 ctx.font = `${style.fontWeight} ${fontSize}px "Segoe UI", Arial, sans-serif`;
                             }
-
                             ctx.fillStyle = style.text;
                             ctx.textAlign = 'center';
                             ctx.textBaseline = 'middle';
                             ctx.fillText(title, segmentX + segmentWidth / 2, navBarY + navBarHeight / 2);
 
+                            // 绘制分隔线
                             if (index < allTitles.length - 1) {
                                 ctx.fillStyle = styles.separator;
                                 ctx.fillRect(segmentX + segmentWidth - 1, navBarY, 2, navBarHeight);
                             }
                         });
 
-                        // --- 绘制高光内描边 ---
-                        const strokeY = (navPosition === 'top') ? navBarY + navBarHeight - 1 : navBarY;
+                        // 步骤 5: 绘制导航栏内侧的细微高光线
+                        ctx.save();
+                        const strokeY = (options.navPosition === 'top') ? navBarY + navBarHeight - 1 : navBarY;
                         ctx.fillStyle = styles.innerStroke;
                         ctx.fillRect(0, strokeY, canvas.width, 1);
+                        ctx.restore();
 
                         // --- 输出图片 ---
                         if (mimeType === 'image/jpeg') {
@@ -483,7 +564,7 @@
             const link = document.createElement('a');
             link.href = imageDataUrl;
 
-            const baseName = originalFileName.split('.').slice(0, -1).join('.');
+            const baseName = originalFileName.split('.').slice(0, -1).join('.') || originalFileName;
             const extension = (mimeType === 'image/jpeg') ? 'jpg' : 'png';
             link.download = `nav-added-${baseName}.${extension}`;
             link.textContent = `下载此图片 (.${extension})`;
@@ -493,9 +574,48 @@
             resultsContainer.appendChild(resultItem);
         }
 
-        // --- 初始化 ---
+        // --- 设置保存与加载 ---
+        function saveSettings() {
+            const settings = {
+                navPosition: navPositionSelect.value,
+                activeColor: activeColorInput.value,
+                activeOpacity: activeOpacityInput.value,
+                inactiveOpacity: inactiveOpacityInput.value
+            };
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            const savedSettings = localStorage.getItem(SETTINGS_KEY);
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                navPositionSelect.value = settings.navPosition || 'bottom';
+                activeColorInput.value = settings.activeColor || '#007bff';
+                activeOpacityInput.value = settings.activeOpacity || '0.6';
+                inactiveOpacityInput.value = settings.inactiveOpacity || '0.4';
+            }
+            // 触发一次input事件来更新滑块数值显示
+            activeOpacityInput.dispatchEvent(new Event('input'));
+            inactiveOpacityInput.dispatchEvent(new Event('input'));
+        }
+        
+        function updateRangeValue(input, display) {
+            display.textContent = parseFloat(input.value).toFixed(2);
+        }
+
+        // --- 初始化与事件绑定 ---
         addEntryBtn.addEventListener('click', addNewEntry);
         generateAllBtn.addEventListener('click', handleGenerateAll);
+
+        // 为所有设置控件绑定事件
+        [navPositionSelect, activeColorInput].forEach(el => el.addEventListener('change', saveSettings));
+        [activeOpacityInput, inactiveOpacityInput].forEach(el => el.addEventListener('input', saveSettings));
+        
+        // 更新滑块数值显示
+        activeOpacityInput.addEventListener('input', () => updateRangeValue(activeOpacityInput, activeOpacityValue));
+        inactiveOpacityInput.addEventListener('input', () => updateRangeValue(inactiveOpacityInput, inactiveOpacityValue));
+
+        loadSettings(); // 页面加载时载入设置
         addNewEntry(); // 页面加载时自动添加第一个条目
     });
     </script>
