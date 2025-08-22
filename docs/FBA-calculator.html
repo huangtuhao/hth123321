@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FBA费用直算（非服装）</title>
+<style>
+  :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--text:#e5e7eb;--border:#1f2937;--chip:#0b1220;--good:#22c55e;--bad:#ef4444}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1020,#0f172a 30%,#0b132a);color:var(--text);font-family:ui-sans-serif,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"PingFang SC","Microsoft YaHei",sans-serif}
+  main{max-width:720px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  h1{font-size:18px;margin:0 0 6px}
+  .muted{color:var(--muted)}
+  .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .tag{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:var(--chip);font-size:12px;color:var(--muted)}
+  .line{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed var(--border);font-size:14px}
+  .line:last-child{border-bottom:none}
+  .val{font-weight:700}
+  .fee{font-size:22px;font-weight:800}
+  .ok{color:var(--good)} .err{color:var(--bad)}
+  code{background:#0b1220;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
+  a{color:#7dd3fc;text-decoration:none}
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>FBA费用直算（非服装 · Excluding Apparel）</h1>
+    <div class="muted">使用方式：在URL后追加参数，例如 <code>?c=33*27*9.5&g=320</code>（c单位cm，g单位克）。</div>
+  </div>
+
+  <div class="card" id="result">
+    正在计算…
+  </div>
+
+  <div class="card">
+    <div class="muted" style="font-size:12px">
+      说明：按美国站“非服装”费表估算。体积重按英寸制 L×W×H/139；Small standard 与 Extra-large 150+ lb 使用单位重量，其他档取单位重量与体积重孰大。若需服装/危险品表或严格边界，请联系我扩展。
+    </div>
+  </div>
+</main>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+
+  // 解析参数
+  const params = new URLSearchParams(location.search);
+  const cStr = params.get('c') || '';
+  const gStr = params.get('g') || '';
+
+  // 工具函数
+  const cmToIn = (cm)=> cm/2.54;
+  const gToLb  = (g)=> (g/1000)*2.2046226218;
+  const lbToOz = (lb)=> lb*16;
+
+  const fmtMoney = (n)=> '$' + (isFinite(n) ? n.toFixed(2) : '—');
+  const sortDesc = (a,b)=> b-a;
+
+  // 体积重（FBA，英寸/139）
+  const dimWeightLb = (L_in,W_in,H_in)=> (L_in*W_in*H_in)/139;
+
+  // 尺寸档判定（工程化近似，适配Table 1使用）
+  function determineTier(L_in,W_in,H_in, unitLb, dimLb){
+    const dims = [L_in,W_in,H_in].sort(sortDesc);
+    const L=dims[0], W=dims[1], H=dims[2];
+
+    // Small standard 近似：≤15×12×0.75 in 且 ≤16 oz
+    if (L<=15 && W<=12 && H<=0.75 && lbToOz(unitLb)<=16){
+      return 'Small standard';
+    }
+    // Large standard 近似：≤18×14×8 in 且 shipping weight ≤20 lb
+    const shippingForCheck = Math.max(unitLb, dimLb);
+    if (L<=18 && W<=14 && H<=8 && shippingForCheck<=20){
+      return 'Large standard';
+    }
+    // Large bulky / Extra-large 分界（简化）：最长边>59" 或 (L + 2*(W+H)) > 130" 归为 Extra-large
+    const girthPlusLength = L + 2*(W + H);
+    if (L>59 || girthPlusLength>130){
+      return 'Extra-large';
+    }
+    return 'Large bulky';
+  }
+
+  // Shipping weight 决策
+  function pickShippingWeight(tier, unitLb, dimLb){
+    if (tier==='Small standard') return {swLb:unitLb, which:'单位重量'};
+    if (tier==='Extra-large' && unitLb>150) return {swLb:unitLb, which:'单位重量'};
+    const sw = Math.max(unitLb, dimLb);
+    return {swLb:sw, which: dimLb>unitLb ? '体积重' : '单位重量'};
+  }
+
+  // 非服装 Table 1 计费
+  function calcFeeExclApparel(tier, swLb){
+    if (tier==='Small standard'){
+      const oz = lbToOz(swLb);
+      if (oz <= 2)  return {fee:3.06, rule:'Small standard ≤2 oz = $3.06'};
+      if (oz <= 4)  return {fee:3.15, rule:'Small standard 2+–4 oz = $3.15'};
+      if (oz <= 6)  return {fee:3.24, rule:'Small standard 4+–6 oz = $3.24'};
+      if (oz <= 8)  return {fee:3.33, rule:'Small standard 6+–8 oz = $3.33'};
+      if (oz <=10)  return {fee:3.43, rule:'Small standard 8+–10 oz = $3.43'};
+      if (oz <=12)  return {fee:3.53, rule:'Small standard 10+–12 oz = $3.53'};
+      if (oz <=14)  return {fee:3.60, rule:'Small standard 12+–14 oz = $3.60'};
+      return {fee:3.65, rule:'Small standard 14+–16 oz = $3.65'};
+    }
+    if (tier==='Large standard'){
+      const lb=swLb, oz=lbToOz(lb);
+      if (oz <= 4)   return {fee:3.68, rule:'Large standard ≤4 oz = $3.68'};
+      if (oz <= 8)   return {fee:3.90, rule:'Large standard 4+–8 oz = $3.90'};
+      if (oz <= 12)  return {fee:4.15, rule:'Large standard 8+–12 oz = $4.15'};
+      if (oz <= 16)  return {fee:4.55, rule:'Large standard 12+–16 oz = $4.55'};
+      if (lb <= 1.25) return {fee:4.99, rule:'Large standard 1+–1.25 lb = $4.99'};
+      if (lb <= 1.5)  return {fee:5.37, rule:'Large standard 1.25+–1.5 lb = $5.37'};
+      if (lb <= 1.75) return {fee:5.52, rule:'Large standard 1.5+–1.75 lb = $5.52'};
+      if (lb <= 2)    return {fee:5.77, rule:'Large standard 1.75+–2 lb = $5.77'};
+      if (lb <= 2.25) return {fee:5.87, rule:'Large standard 2+–2.25 lb = $5.87'};
+      if (lb <= 2.5)  return {fee:6.05, rule:'Large standard 2.25+–2.5 lb = $6.05'};
+      if (lb <= 2.75) return {fee:6.21, rule:'Large standard 2.5+–2.75 lb = $6.21'};
+      if (lb <= 3)    return {fee:6.62, rule:'Large standard 2.75+–3 lb = $6.62'};
+      // >3 lb
+      const base=6.92;
+      const overOz = Math.max(0, lbToOz(lb-3));
+      const intervals = Math.ceil(overOz/4);
+      return {fee: base + intervals*0.08, rule:`Large standard >3 lb：$6.92 + $0.08×每4oz（${intervals}间隔）`};
+    }
+    if (tier==='Large bulky'){
+      const base=9.61;
+      const overLb = Math.ceil(Math.max(0, swLb - 1));
+      return {fee: base + overLb*0.38, rule:`Large bulky：$9.61 + $0.38×每1lb（>1lb部分，共${overLb}间隔）`};
+    }
+    if (tier==='Extra-large'){
+      const lb=swLb;
+      if (lb <= 50){
+        const over = Math.ceil(Math.max(0, lb - 1));
+        return {fee: 26.33 + over*0.38, rule:`Extra-large 0–50 lb：$26.33 + $0.38×每1lb（>1lb，共${over}间隔）`};
+      } else if (lb <= 70){
+        const over = Math.ceil(Math.max(0, lb - 51));
+        return {fee: 40.12 + over*0.75, rule:`Extra-large 50+–70 lb：$40.12 + $0.75×每1lb（>51lb，共${over}间隔）`};
+      } else if (lb <= 150){
+        const over = Math.ceil(Math.max(0, lb - 71));
+        return {fee: 54.81 + over*0.75, rule:`Extra-large 70+–150 lb：$54.81 + $0.75×每1lb（>71lb，共${over}间隔）`};
+      } else {
+        const over = Math.ceil(Math.max(0, lb - 151));
+        return {fee: 194.95 + over*0.19, rule:`Extra-large 150+ lb：$194.95 + $0.19×每1lb（>151lb，共${over}间隔；按单位重量）`};
+      }
+    }
+    return {fee:NaN, rule:'无法判定费档'};
+  }
+
+  function parseC(c){
+    const parts = c.split('*').map(s=>s.trim()).filter(Boolean);
+    if (parts.length!==3) return null;
+    const [a,b,d] = parts.map(parseFloat);
+    if ([a,b,d].some(x=>!isFinite(x)||x<=0)) return null;
+    return [a,b,d]; // cm
+  }
+
+  function renderError(msg){
+    $('result').innerHTML = `
+      <div class="line"><span>状态</span><span class="val err">${msg}</span></div>
+      <div class="line"><span>示例</span><span class="muted">?c=33*27*9.5&g=320</span></div>
+    `;
+  }
+
+  function calc(){
+    const dimsCm = parseC(cStr);
+    const g = parseFloat(gStr);
+
+    if (!dimsCm || !isFinite(g) || g<=0){
+      renderError('参数缺失或格式错误。请提供 c=长*宽*高(厘米) 与 g=重量(克)。');
+      return;
+    }
+
+    // 输入转单位
+    const [Lc, Wc, Hc] = dimsCm;
+    const dimsIn = [cmToIn(Lc), cmToIn(Wc), cmToIn(Hc)].sort(sortDesc);
+    const L = dimsIn[0], W = dimsIn[1], H = dimsIn[2];
+
+    const unitLb = gToLb(g);
+    const dimLb = dimWeightLb(L, W, H);
+
+    const tier = determineTier(L, W, H, unitLb, dimLb);
+    const { swLb, which } = pickShippingWeight(tier, unitLb, dimLb);
+    const { fee, rule } = calcFeeExclApparel(tier, swLb);
+
+    // 输出
+    const html = `
+      <div class="row">
+        <span class="tag">尺寸：${Lc}×${Wc}×${Hc} cm ≈ ${L.toFixed(2)}×${W.toFixed(2)}×${H.toFixed(2)} in</span>
+        <span class="tag">单位重：${(g/1000).toFixed(3)} kg ≈ ${unitLb.toFixed(2)} lb</span>
+        <span class="tag">体积重(FBA)：${dimLb.toFixed(2)} lb</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="tag">Size tier：${tier}</span>
+        <span class="tag">Shipping weight：${swLb.toFixed(2)} lb（采用：${which}）</span>
+      </div>
+      <div class="line"><span>规则</span><span class="muted">${rule}</span></div>
+      <div class="line"><span>FBA fulfillment fee（非服装）</span><span class="fee">${fmtMoney(fee)}</span></div>
+    `;
+    $('result').innerHTML = html;
+  }
+
+  calc();
+})();
+</script>
+</body>
+</html>
