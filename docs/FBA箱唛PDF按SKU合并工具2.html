@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FBA箱唛PDF按SKU合并工具 (v6.0 - 终极网络稳定版)</title>
+    <title>FBA箱唛PDF合并工具 (v10.0 - 自托管终极版)</title>
     
     <!-- 引入必要的JS库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -15,99 +15,24 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f0f2f5;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-        .container {
-            max-width: 900px;
-            width: 100%;
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #1a73e8;
-            margin-top: 0;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #e0e0e0;
-            padding-bottom: 15px;
-        }
-        .section {
-            margin-bottom: 25px;
-            padding: 20px;
-            border: 1px solid #e8e8e8;
-            border-radius: 6px;
-        }
-        .section h3 {
-            margin-top: 0;
-            color: #5f6368;
-            font-size: 1.1em;
-        }
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        input[type="file"], textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-size: 1em;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { max-width: 900px; width: 100%; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a73e8; margin-top: 0; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 15px; }
+        .section { margin-bottom: 25px; padding: 20px; border: 1px solid #e8e8e8; border-radius: 6px; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; }
+        input[type="file"], textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 1em; }
         input[type="file"] { padding: 5px; }
-        textarea {
-            resize: vertical;
-            min-height: 120px;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-        }
-        .action-btn {
-            display: block;
-            width: 100%;
-            padding: 12px 20px;
-            margin-top: 20px;
-            font-size: 1.2em;
-            font-weight: bold;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
+        textarea { resize: vertical; min-height: 120px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; }
+        .action-btn { display: block; width: 100%; padding: 12px 20px; margin-top: 20px; font-size: 1.2em; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; }
         #process-btn { background-color: #1a73e8; }
         #process-btn:hover:not(:disabled) { background-color: #185abc; }
         #download-all-btn { background-color: #28a745; }
         #download-all-btn:hover:not(:disabled) { background-color: #218838; }
         .action-btn:disabled { background-color: #9e9e9e; cursor: not-allowed; }
-
-        #status-container, #results-container {
-            margin-top: 30px;
-            border-top: 1px solid #e0e0e0;
-            padding-top: 20px;
-        }
-        #status-log {
-            background-color: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px;
-            padding: 15px; max-height: 300px; overflow-y: auto; white-space: pre-wrap;
-            word-wrap: break-word; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            font-size: 0.9em; color: #3c4043;
-        }
-        #download-links a {
-            display: block; background-color: #e8f0fe; color: #1967d2; padding: 10px 15px;
-            margin-bottom: 8px; border-radius: 4px; text-decoration: none; font-weight: 500;
-            transition: background-color 0.3s;
-        }
+        #status-container, #results-container { margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+        #status-log { background-color: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 15px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 0.9em; color: #3c4043; }
+        #download-links a { display: block; background-color: #e8f0fe; color: #1967d2; padding: 10px 15px; margin-bottom: 8px; border-radius: 4px; text-decoration: none; font-weight: 500; transition: background-color 0.3s; }
         #download-links a:hover { background-color: #d2e3fc; }
-
-        /* Toggle Switch Styles */
         .switch-container { display: flex; align-items: center; margin-bottom: 15px; }
         .switch-label { margin: 0; margin-right: 10px; font-weight: normal; }
         .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
@@ -120,7 +45,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>FBA箱唛PDF按SKU合并工具 (v6.0 - 终极网络稳定版)</h1>
+        <h1>FBA箱唛PDF合并工具 (v10.0 - 自托管终极版)</h1>
 
         <div class="section">
             <label for="pdf-files">第一步：选择一个或多个FBA箱唛PDF文件</label>
@@ -129,13 +54,13 @@
 
         <div class="section">
             <div class="switch-container">
-                <span class="switch-label">第二步：添加中文品名水印 (可选)</span>
+                <span class="switch-label">第二步：添加中文品名水印 (默认开启)</span>
                 <label class="switch">
-                    <input type="checkbox" id="add-watermark-switch">
+                    <input type="checkbox" id="add-watermark-switch" checked>
                     <span class="slider"></span>
                 </label>
             </div>
-            <div id="watermark-section" style="display: none;">
+            <div id="watermark-section">
                 <label for="watermark-mapping-text">SKU 与 **标签水印** 的映射 (用于打印在标签上)</label>
                 <textarea id="watermark-mapping-text" placeholder="每行一个映射，格式为：SKU<空格或Tab>水印文字&#10;例如：TOY10006	数字款(1-10)">TOY10006	数字款(1-10)
 TOY10007	数字款(1-6)
@@ -185,17 +110,41 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
         const downloadLinks = document.getElementById('download-links');
 
         let generatedFiles = [];
-        let customFontBytes = null; // 缓存字体数据
+        let customFontBytes = null;
 
-        // --- Event Listeners ---
+        // Event Listeners
         addWatermarkSwitch.addEventListener('change', () => {
             watermarkSection.style.display = addWatermarkSwitch.checked ? 'block' : 'none';
         });
 
         processBtn.addEventListener('click', handleProcess);
         downloadAllBtn.addEventListener('click', handleZipDownload);
-
-        // --- Main Functions ---
+        
+        async function loadFontFromServer() {
+            // --- 使用您提供的字体链接 ---
+            const fontUrl = 'https://huangtuhao.github.io/hth123321/AlibabaPuHuiTi-3-115-Black.ttf';
+            
+            log(`正在从您的服务器加载字体: ${fontUrl}...`);
+            
+            try {
+                // 因为HTML和字体都在您的服务器上，这个请求现在是允许的！
+                const fontResponse = await fetch(fontUrl);
+                if (!fontResponse.ok) {
+                    // 如果GitHub Pages有CORS问题，会在这里失败
+                    throw new Error(`网络响应不佳: ${fontResponse.statusText}. (提示: 某些托管平台如GitHub Pages可能需要特殊配置或有延迟，如果持续失败，可以尝试使用相对路径 './AlibabaPuHuiTi-3-115-Black.ttf' )`);
+                }
+                customFontBytes = await fontResponse.arrayBuffer();
+                log('字体加载成功！');
+                return true;
+            } catch (error) {
+                log(`!! 严重错误：从您的服务器加载字体失败！`);
+                console.error('Font loading error:', error);
+                alert(`加载字体时发生错误: ${error.message}\n请确保字体链接正确且服务器允许跨域访问（如果需要）。`);
+                return false;
+            }
+        }
+        
+        // --- The rest of the JS code is the same as previous versions ---
         function log(message) {
             console.log(message);
             statusLog.textContent += message + '\n';
@@ -217,42 +166,13 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
             }
             return mapping;
         }
-
-        async function loadFont() {
-            // 如果字体已经加载过，直接返回成功
-            if (customFontBytes) {
-                log('中文字体已缓存，直接使用。');
-                return true;
-            }
-            
-            // **关键修复：使用 Google Fonts 官方 Github 仓库的稳定链接**
-            const fontUrl = 'https://cdn.jsdelivr.net/gh/google/fonts/ofl/notosanssc/NotoSansSC-Regular.otf';
-            log('正在从网络加载中文字体 (Noto Sans SC)...');
-            
-            try {
-                const response = await fetch(fontUrl);
-                if (!response.ok) {
-                    throw new Error(`字体下载失败: ${response.status} ${response.statusText}`);
-                }
-                customFontBytes = await response.arrayBuffer();
-                log('字体加载成功，已缓存。');
-                return true;
-            } catch (error) {
-                log(`!! 警告：中文字体加载失败。错误: ${error.message}`);
-                log('!! 水印功能将自动禁用，但其他功能仍可正常使用。');
-                console.error('Font loading error:', error);
-                alert('无法加载中文字体，水印功能将不可用。请检查您的网络连接。');
-                return false;
-            }
-        }
-
+        
         async function handleProcess() {
             if (pdfFilesInput.files.length === 0) {
                 alert('请至少选择一个PDF文件！');
                 return;
             }
 
-            // --- Reset UI ---
             processBtn.disabled = true;
             processBtn.textContent = '正在处理中，请稍候...';
             statusContainer.style.display = 'block';
@@ -267,17 +187,16 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                 
                 let watermarkEnabled = addWatermarkSwitch.checked;
                 let watermarkMapping = {};
-
                 if (watermarkEnabled) {
                     log('中文水印功能已开启。');
-                    // 尝试加载字体，如果失败，则禁用此功能并继续
-                    const fontLoaded = await loadFont();
-                    if (fontLoaded) {
-                        watermarkMapping = parseMapping(watermarkMappingText);
-                        log('水印文字映射已解析。');
-                    } else {
-                        watermarkEnabled = false; // 优雅降级，禁用功能
+                    if (!customFontBytes) {
+                        const fontLoaded = await loadFontFromServer();
+                        if (!fontLoaded) {
+                            throw new Error("字体加载失败，处理中止。");
+                        }
                     }
+                    watermarkMapping = parseMapping(watermarkMappingText);
+                    log('水印文字映射已解析。');
                 }
 
                 const filenameMapping = parseMapping(filenameMappingText);
@@ -321,7 +240,6 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                     const newPdfDoc = await PDFLib.PDFDocument.create();
                     
                     let embeddedFont;
-                    // 只有当功能开启且字体成功加载时，才注册和嵌入字体
                     if (watermarkEnabled && watermarkMapping[sku]) {
                         newPdfDoc.registerFontkit(fontkit);
                         embeddedFont = await newPdfDoc.embedFont(customFontBytes, { subset: true });
@@ -331,7 +249,6 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                         const sourceDoc = loadedPdfLibDocs[pageInfo.fileName];
                         const [copiedPage] = await newPdfDoc.copyPages(sourceDoc, [pageInfo.pageNum - 1]);
                         
-                        // 再次检查，确保所有条件都满足才绘制文字
                         if (watermarkEnabled && watermarkMapping[sku] && embeddedFont) {
                             copiedPage.drawText(watermarkMapping[sku], {
                                 x: 36,
@@ -368,9 +285,8 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                 log('\n处理完成！所有PDF已生成。');
 
             } catch (error) {
-                log('\n!! 发生严重错误: ' + error.message);
+                log('\n!! ' + error.message);
                 console.error(error);
-                alert('处理过程中发生错误: ' + error.message);
             } finally {
                 processBtn.disabled = false;
                 processBtn.textContent = '第四步：开始处理并生成PDF';
