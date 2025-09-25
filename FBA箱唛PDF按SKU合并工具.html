@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBA箱唛PDF按SKU合并工具 (v2.1)</title>
+    
+    <!-- 引入必要的JS库 -->
+    <!-- 1. pdf.js for reading PDF content -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    </script>
+    <!-- 2. pdf-lib.js for creating/merging PDF documents -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- 3. JSZip.js for creating zip files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #1a73e8;
+            margin-top: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 15px;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #5f6368;
+            font-size: 1.1em;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        input[type="file"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+        input[type="file"] {
+            padding: 5px;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 150px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        }
+        .action-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            margin-top: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #process-btn {
+            background-color: #1a73e8;
+        }
+        #process-btn:hover:not(:disabled) {
+            background-color: #185abc;
+        }
+        #download-all-btn {
+            background-color: #28a745;
+        }
+        #download-all-btn:hover:not(:disabled) {
+            background-color: #218838;
+        }
+        .action-btn:disabled {
+            background-color: #9e9e9e;
+            cursor: not-allowed;
+        }
+        #status-container, #results-container {
+            margin-top: 30px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 20px;
+        }
+        #status-log {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.9em;
+            color: #3c4043;
+        }
+        #download-links a {
+            display: block;
+            background-color: #e8f0fe;
+            color: #1967d2;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+        #download-links a:hover {
+            background-color: #d2e3fc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FBA箱唛PDF按SKU合并工具 (v2.1)</h1>
+
+        <div class="section">
+            <label for="pdf-files">第一步：选择一个或多个FBA箱唛PDF文件</label>
+            <input type="file" id="pdf-files" multiple accept=".pdf">
+        </div>
+
+        <div class="section">
+            <label for="mapping-text">第二步：粘贴SKU与产品名称的映射 (用于文件命名)</label>
+            <textarea id="mapping-text" placeholder="每行一个映射，格式为：SKU<空格或Tab>产品名称&#10;例如：TOY10006	感官瓷砖-数字款-套装1(1-10)">TOY10006	感官瓷砖-数字款-套装1(1-10)
+TOY10007	感官瓷砖-数字款-套装2(1-6)
+TOY10009	感官瓷砖-方形款-套装1(4片)
+TOY10010	感官瓷砖-方形款-套装2(6片)
+TOY10011	感官瓷砖-六边形款-套装1(6片)
+TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
+        </div>
+
+        <button id="process-btn" class="action-btn">第三步：开始处理并生成PDF</button>
+
+        <div id="status-container" style="display: none;">
+            <h3>处理日志：</h3>
+            <pre id="status-log"></pre>
+        </div>
+
+        <div id="results-container" style="display: none;">
+            <h3>生成结果：</h3>
+            <button id="download-all-btn" class="action-btn" style="display: none;">一键打包下载所有PDF (.zip)</button>
+            <div id="download-links" style="margin-top: 20px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const pdfFilesInput = document.getElementById('pdf-files');
+        const mappingTextInput = document.getElementById('mapping-text');
+        const processBtn = document.getElementById('process-btn');
+        const statusContainer = document.getElementById('status-container');
+        const statusLog = document.getElementById('status-log');
+        const resultsContainer = document.getElementById('results-container');
+        const downloadAllBtn = document.getElementById('download-all-btn');
+        const downloadLinks = document.getElementById('download-links');
+
+        let generatedFiles = [];
+
+        function log(message) {
+            console.log(message);
+            statusLog.textContent += message + '\n';
+            statusLog.scrollTop = statusLog.scrollHeight;
+        }
+
+        function parseMapping() {
+            const mapping = {};
+            const lines = mappingTextInput.value.trim().split('\n');
+            for (const line of lines) {
+                const parts = line.split(/\s+/);
+                if (parts.length >= 2) {
+                    const sku = parts[0];
+                    const name = parts.slice(1).join(' ');
+                    if (sku.startsWith('TOY')) {
+                         mapping[sku] = name;
+                    }
+                }
+            }
+            return mapping;
+        }
+
+        processBtn.addEventListener('click', async () => {
+            const files = pdfFilesInput.files;
+            if (files.length === 0) {
+                alert('请至少选择一个PDF文件！');
+                return;
+            }
+
+            processBtn.disabled = true;
+            processBtn.textContent = '正在处理中，请稍候...';
+            statusContainer.style.display = 'block';
+            resultsContainer.style.display = 'none';
+            downloadAllBtn.style.display = 'none';
+            statusLog.textContent = '';
+            downloadLinks.innerHTML = '';
+            generatedFiles = [];
+
+            try {
+                log('处理开始...');
+                const productMapping = parseMapping();
+                log('产品名称映射已解析。');
+
+                const pageIndexBySku = {};
+                const loadedPdfLibDocs = {};
+
+                log('\n===== 阶段 1: 正在索引所有PDF页面... =====');
+                for (const file of files) {
+                    log(`\n分析文件: ${file.name}`);
+                    const arrayBuffer = await file.arrayBuffer();
+                    
+                    const pdfjsDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    loadedPdfLibDocs[file.name] = await PDFLib.PDFDocument.load(arrayBuffer);
+
+                    for (let i = 1; i <= pdfjsDoc.numPages; i++) {
+                        const page = await pdfjsDoc.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+
+                        const skuMatch = pageText.match(/(TOY\d{5})/);
+                        if (skuMatch) {
+                            const sku = skuMatch[0];
+                            log(`  - 第 ${i} 页 -> 找到 SKU: ${sku}`);
+                            if (!pageIndexBySku[sku]) pageIndexBySku[sku] = [];
+                            pageIndexBySku[sku].push({ fileName: file.name, pageNum: i });
+                        } else {
+                            log(`  - 警告: 在文件 ${file.name} 的第 ${i} 页未找到格式为 TOYxxxxx 的SKU。`);
+                        }
+                    }
+                }
+
+                log('\n===== 阶段 2: 正在生成新的PDF文件... =====');
+                if (Object.keys(pageIndexBySku).length === 0) {
+                    log('错误：在所有文件中均未找到任何有效的SKU。');
+                    throw new Error("未找到SKU，处理中止。");
+                }
+                
+                resultsContainer.style.display = 'block';
+
+                for (const sku in pageIndexBySku) {
+                    const pagesToCopy = pageIndexBySku[sku];
+                    const boxCount = pagesToCopy.length;
+                    log(`\n为 SKU: ${sku} 创建PDF... (共 ${boxCount} 页)`);
+
+                    const newPdfDoc = await PDFLib.PDFDocument.create();
+
+                    for (const pageInfo of pagesToCopy) {
+                        const sourceDoc = loadedPdfLibDocs[pageInfo.fileName];
+                        const [copiedPage] = await newPdfDoc.copyPages(sourceDoc, [pageInfo.pageNum - 1]);
+                        newPdfDoc.addPage(copiedPage);
+                    }
+
+                    const pdfBytes = await newPdfDoc.save();
+                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                    
+                    const productName = productMapping[sku] || '未知产品';
+                    // *** 更新文件名格式 ***
+                    const fileName = `${sku} - ${productName} - ${boxCount}箱.pdf`;
+
+                    generatedFiles.push({ name: fileName, blob: blob });
+
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    // *** 更新下载链接文本 ***
+                    link.textContent = `下载 "${fileName}"`;
+                    downloadLinks.appendChild(link);
+                    log(`  - 已生成 "${fileName}" 的下载链接。`);
+                }
+
+                if(generatedFiles.length > 0) {
+                    downloadAllBtn.style.display = 'block';
+                }
+
+                log('\n处理完成！所有PDF已生成。您可以单独下载或一键打包下载。');
+
+            } catch (error) {
+                log('\n发生严重错误: ' + error.message);
+                console.error(error);
+                alert('处理过程中发生错误: ' + error.message);
+            } finally {
+                processBtn.disabled = false;
+                processBtn.textContent = '第三步：开始处理并生成PDF';
+            }
+        });
+
+        downloadAllBtn.addEventListener('click', async () => {
+            if (generatedFiles.length === 0) {
+                alert('没有可供打包的文件。');
+                return;
+            }
+
+            downloadAllBtn.disabled = true;
+            downloadAllBtn.textContent = '正在打包ZIP，请稍候...';
+            log('\n===== 正在打包所有PDF到 .zip 文件... =====');
+
+            try {
+                const zip = new JSZip();
+                for (const file of generatedFiles) {
+                    zip.file(file.name, file.blob);
+                    log(`  - 已添加 ${file.name} 到压缩包`);
+                }
+
+                const zipBlob = await zip.generateAsync({
+                    type: "blob",
+                    compression: "DEFLATE",
+                    compressionOptions: {
+                        level: 9
+                    }
+                });
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(zipBlob);
+                link.download = 'FBA_Labels_Export.zip';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                log('ZIP文件已生成并开始下载！');
+
+            } catch (error) {
+                log('打包ZIP文件时出错: ' + error.message);
+                console.error(error);
+            } finally {
+                downloadAllBtn.disabled = false;
+                downloadAllBtn.textContent = '一键打包下载所有PDF (.zip)';
+            }
+        });
+    </script>
+</body>
+</html>
