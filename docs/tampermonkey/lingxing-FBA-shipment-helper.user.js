@@ -13,7 +13,7 @@
     'use strict';
 
     // --- 用户可配置区域 ---
-    const TEMPLATE_SUFFIX = '飞帆盐田卡派'; // 请在此处修改您需要的固定后缀
+    const TEMPLATE_SUFFIX = '洛杉矶海卡'; // 请在此处修改您需要的固定后缀
     const SHORT_NAME_STORAGE_KEY = 'LX_ERP_SHORT_NAME_MAP_V2'; // 用于存储简称的数据库键名
     // --- 配置区域结束 ---
 
@@ -472,6 +472,8 @@
     // =================================================================================
     function init() {
         addGlobalStyle();
+
+        console.log('一键生成箱唛信息');
 
         const mainButton = document.createElement('button');
         mainButton.innerText = '一键生成箱唛信息';
