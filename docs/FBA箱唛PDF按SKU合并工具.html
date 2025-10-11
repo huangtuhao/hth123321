@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FBA箱唛PDF按SKU合并工具 (v2.1)</title>
+    <title>FBA箱唛PDF按SKU合并工具 (v2.2 - 动态SKU)</title>
     
     <!-- 引入必要的JS库 -->
     <!-- 1. pdf.js for reading PDF content -->
@@ -54,6 +54,11 @@
             display: block;
             font-weight: 600;
             margin-bottom: 8px;
+        }
+        .label-note {
+            font-weight: 400;
+            font-size: 0.9em;
+            color: #e91e63;
         }
         input[type="file"], textarea {
             width: 100%;
@@ -136,7 +141,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>FBA箱唛PDF按SKU合并工具 (v2.1)</h1>
+        <h1>FBA箱唛PDF按SKU合并工具 (v2.2 - 动态SKU)</h1>
 
         <div class="section">
             <label for="pdf-files">第一步：选择一个或多个FBA箱唛PDF文件</label>
@@ -144,8 +149,8 @@
         </div>
 
         <div class="section">
-            <label for="mapping-text">第二步：粘贴SKU与产品名称的映射 (用于文件命名)</label>
-            <textarea id="mapping-text" placeholder="每行一个映射，格式为：SKU<空格或Tab>产品名称&#10;例如：TOY10006	感官瓷砖-数字款-套装1(1-10)">TOY10006	感官瓷砖-数字款-套装1(1-10)
+            <label for="mapping-text">第二步：粘贴SKU与产品名称的映射 <span class="label-note">(必需项)</span></label>
+            <textarea id="mapping-text" placeholder="每行一个映射，格式为：SKU<空格或Tab>产品名称&#10;程序将根据这里提供的SKU列表来识别PDF中的标签。&#10;例如：&#10;SKU-ABC-001	我的产品A&#10;XYZ-987	我的产品B">TOY10006	感官瓷砖-数字款-套装1(1-10)
 TOY10007	感官瓷砖-数字款-套装2(1-6)
 TOY10009	感官瓷砖-方形款-套装1(4片)
 TOY10010	感官瓷砖-方形款-套装2(6片)
@@ -185,26 +190,41 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
             statusLog.scrollTop = statusLog.scrollHeight;
         }
 
+        // *** 重要更新：解析映射，同时返回名称映射和SKU列表 ***
         function parseMapping() {
-            const mapping = {};
+            const nameMap = {};
+            const skuList = [];
             const lines = mappingTextInput.value.trim().split('\n');
             for (const line of lines) {
-                const parts = line.split(/\s+/);
-                if (parts.length >= 2) {
+                if (line.trim() === '') continue; // 跳过空行
+                const parts = line.split(/\s+/); // 用一个或多个空白字符分割
+                if (parts.length >= 1) { // 至少要有一个SKU
                     const sku = parts[0];
-                    const name = parts.slice(1).join(' ');
-                    if (sku.startsWith('TOY')) {
-                         mapping[sku] = name;
-                    }
+                    const name = parts.length > 1 ? parts.slice(1).join(' ') : '未知产品';
+                    nameMap[sku] = name;
+                    skuList.push(sku);
                 }
             }
-            return mapping;
+            // 按长度降序排序SKU列表，防止部分匹配问题 (例如 "SKU-10" 不会被 "SKU-1" 错误匹配)
+            skuList.sort((a, b) => b.length - a.length);
+            return { nameMap, skuList };
+        }
+        
+        // 辅助函数：转义正则特殊字符
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
         processBtn.addEventListener('click', async () => {
             const files = pdfFilesInput.files;
             if (files.length === 0) {
                 alert('请至少选择一个PDF文件！');
+                return;
+            }
+
+            const { nameMap, skuList } = parseMapping();
+            if (skuList.length === 0) {
+                alert('请在第二步的文本框中提供至少一个有效的SKU映射！');
                 return;
             }
 
@@ -219,8 +239,7 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
 
             try {
                 log('处理开始...');
-                const productMapping = parseMapping();
-                log('产品名称映射已解析。');
+                log(`已加载 ${skuList.length} 个SKU用于识别: ${skuList.join(', ')}`);
 
                 const pageIndexBySku = {};
                 const loadedPdfLibDocs = {};
@@ -238,22 +257,31 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                         const textContent = await page.getTextContent();
                         const pageText = textContent.items.map(item => item.str).join(' ');
 
-                        const skuMatch = pageText.match(/(TOY\d{5})/);
-                        if (skuMatch) {
-                            const sku = skuMatch[0];
-                            log(`  - 第 ${i} 页 -> 找到 SKU: ${sku}`);
-                            if (!pageIndexBySku[sku]) pageIndexBySku[sku] = [];
-                            pageIndexBySku[sku].push({ fileName: file.name, pageNum: i });
+                        // *** 重要更新：使用SKU列表进行动态匹配 ***
+                        let foundSku = null;
+                        for (const sku of skuList) {
+                            // 使用带单词边界的正则进行全词匹配
+                            const skuRegex = new RegExp(`\\b${escapeRegex(sku)}\\b`);
+                            if (skuRegex.test(pageText)) {
+                                foundSku = sku;
+                                break; // 找到即跳出循环
+                            }
+                        }
+
+                        if (foundSku) {
+                            log(`  - 第 ${i} 页 -> 找到 SKU: ${foundSku}`);
+                            if (!pageIndexBySku[foundSku]) pageIndexBySku[foundSku] = [];
+                            pageIndexBySku[foundSku].push({ fileName: file.name, pageNum: i });
                         } else {
-                            log(`  - 警告: 在文件 ${file.name} 的第 ${i} 页未找到格式为 TOYxxxxx 的SKU。`);
+                            log(`  - 警告: 在文件 ${file.name} 的第 ${i} 页未找到映射列表中的任何SKU。`);
                         }
                     }
                 }
 
                 log('\n===== 阶段 2: 正在生成新的PDF文件... =====');
                 if (Object.keys(pageIndexBySku).length === 0) {
-                    log('错误：在所有文件中均未找到任何有效的SKU。');
-                    throw new Error("未找到SKU，处理中止。");
+                    log('错误：在所有文件中均未找到映射列表中的任何SKU。');
+                    throw new Error("未找到有效SKU，处理中止。");
                 }
                 
                 resultsContainer.style.display = 'block';
@@ -274,8 +302,7 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                     const pdfBytes = await newPdfDoc.save();
                     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                     
-                    const productName = productMapping[sku] || '未知产品';
-                    // *** 更新文件名格式 ***
+                    const productName = nameMap[sku] || '未知产品';
                     const fileName = `${sku} - ${productName} - ${boxCount}箱.pdf`;
 
                     generatedFiles.push({ name: fileName, blob: blob });
@@ -284,7 +311,6 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                     const link = document.createElement('a');
                     link.href = url;
                     link.download = fileName;
-                    // *** 更新下载链接文本 ***
                     link.textContent = `下载 "${fileName}"`;
                     downloadLinks.appendChild(link);
                     log(`  - 已生成 "${fileName}" 的下载链接。`);
