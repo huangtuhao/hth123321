@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         领星ERP-FBA清关发票生成助手
 // @namespace    http://tampermonkey.net/
-// @version      4.0
-// @description  (V4.0) 重大逻辑升级！引入智能连续子分组功能。现在脚本只会合并指纹相同且箱号连续的箱子，非连续的箱子将被正确地分开处理，极大提升了准确性。
+// @version      4.1
+// @description  (V4.1) 新增功能：模板中可通过 `helpers.convertToKg(value, unit)` 辅助函数，轻松将g, lb, oz等单位统一转换为KG，简化模板逻辑。
 // @author       Your Assistant & User
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
@@ -54,8 +54,46 @@
         async fetchPackingDetails(shipment, vueInstance) { if (!vueInstance.$gwPost) { const errorMsg = "无法在Vue实例上找到 $gwPost 方法，脚本可能需要更新。"; notify.error(errorMsg); throw new Error(errorMsg); } const payload = { shipmentId: shipment.shipmentId, inboundPlanId: shipment.inboundPlanId, sid: vueInstance.info.sid, }; try { const response = await vueInstance.$gwPost("/amz-sta-server/inbound-packing/getShipmentPackingDetail", payload); if (response.code === 1 && response.data) { return response.data; } else { throw new Error(response.msg || 'API返回数据无效'); } } catch (error) { console.error(`使用 $gwPost 获取货件 ${shipment.shipmentConfirmationId} 装箱详情失败:`, error); notify.error(`获取装箱详情失败: ${error.message}`); return null; } },
         async selectTemplate() { return new Promise(async (resolve) => { const lastSelected = await GM_getValue(CONFIG.LAST_SELECTED_KEY, CONFIG.BUILT_IN_TEMPLATES[0]?.name); const userTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY); let optionsHtml = ''; CONFIG.BUILT_IN_TEMPLATES.forEach(t => { optionsHtml += `<option value="${t.name}" ${t.name === lastSelected ? 'selected' : ''}>${t.name}</option>`; }); if (userTemplateObj && userTemplateObj.name && userTemplateObj.data) { const isSelected = lastSelected === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER; optionsHtml += `<option value="${CONFIG.CUSTOM_TEMPLATE_IDENTIFIER}" ${isSelected ? 'selected' : ''}>${userTemplateObj.name} (自定义)</option>`; } const bodyHtml = ` <label for="lx-template-select" class="lx-template-select-label">请选择一个发票模板:</label> <select id="lx-template-select" class="lx-template-select">${optionsHtml}</select> <p style="font-size: 12px; color: #909399; margin-top: -10px; margin-bottom: 20px;">选择后将自动保存为默认选项。</p> <button id="lx-upload-new-btn" class="lx-invoice-modal-btn lx-template-upload-btn">上传新的自定义模板</button> <input type="file" id="lx-template-file-input" style="display: none;" accept=".xlsx, .xls">`; const footer = ` <button id="lx-template-cancel-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-secondary">取消</button> <button id="lx-template-next-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-primary">下一步</button>`; const templateModal = modal.create('lx-template-select-modal', '选择发票模板', bodyHtml, footer); const fileInput = document.getElementById('lx-template-file-input'); document.getElementById('lx-upload-new-btn').onclick = () => fileInput.click(); fileInput.onchange = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (event) => { const base64 = event.target.result.substring(event.target.result.indexOf(',') + 1); const newTemplateObj = { name: file.name, data: base64 }; await GM_setValue(CONFIG.USER_TEMPLATE_KEY, newTemplateObj); await GM_setValue(CONFIG.LAST_SELECTED_KEY, CONFIG.CUSTOM_TEMPLATE_IDENTIFIER); notify.success(`自定义模板 "${file.name}" 上传成功！`); modal.hide('lx-template-select-modal'); resolve(this.selectTemplate()); }; reader.readAsDataURL(file); }; document.getElementById('lx-template-cancel-btn').onclick = () => { modal.hide('lx-template-select-modal'); resolve(null); }; document.getElementById('lx-template-next-btn').onclick = async () => { const selectedValue = document.getElementById('lx-template-select').value; await GM_setValue(CONFIG.LAST_SELECTED_KEY, selectedValue); if (selectedValue === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER) { const latestUserTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY); if (latestUserTemplateObj && latestUserTemplateObj.data) { modal.hide('lx-template-select-modal'); resolve(latestUserTemplateObj.data); } else { notify.error("无法加载自定义模板，请尝试重新上传。"); } return; } const selectedTemplateConfig = CONFIG.BUILT_IN_TEMPLATES.find(t => t.name === selectedValue); if (!selectedTemplateConfig) { notify.error("选择的内置模板配置不存在！"); return; } const cache = await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {}); if (cache[selectedTemplateConfig.url]) { notify.success(`已从缓存加载模板: ${selectedValue}`); modal.hide('lx-template-select-modal'); resolve(cache[selectedTemplateConfig.url]); return; } modal.showLoading(`首次加载，正在从网络获取模板: ${selectedValue}...`); try { const response = await this.fetchImage(selectedTemplateConfig.url); if (!response) throw new Error("下载失败，请检查URL或网络。"); const base64 = templateHelpers.arrayBufferToBase64(response); cache[selectedTemplateConfig.url] = base64; await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache); notify.success(`模板获取并缓存成功！`); modal.hide('lx-template-select-modal'); modal.hideLoading(); resolve(base64); } catch (error) { notify.error(`获取模板失败: ${error.message}`); modal.hideLoading(); } }; }); },
         
-        // 【V4.0 核心升级】重构箱子合并逻辑，引入连续子分组处理
         async processTemplateAndDownload({ templateBase64, skuItems, globalInfo, vueInstance }) {
+            // 【V4.1 新增】定义辅助函数对象
+            const helpers = {
+                /**
+                 * 将给定的重量值和单位转换为千克(KG)。
+                 * @param {number|string} value - 重量值。
+                 * @param {string} sourceUnit - 原始单位 (如 'g', 'kg', 'lb', 'oz')。
+                 * @returns {number} - 转换后的千克(KG)值。
+                 */
+                convertToKg: (value, sourceUnit) => {
+                    const numericValue = parseFloat(value);
+                    if (isNaN(numericValue)) {
+                        return 0; // 如果值无效，返回0
+                    }
+
+                    if (!sourceUnit || typeof sourceUnit !== 'string') {
+                        console.warn(`[convertToKg] 未提供单位，将直接返回原始值: ${numericValue}`);
+                        return numericValue;
+                    }
+
+                    const unit = sourceUnit.toLowerCase().trim();
+                    
+                    const factors = {
+                        'g': 0.001, 'gram': 0.001, 'grams': 0.001, '克': 0.001,
+                        'kg': 1, 'kilogram': 1, 'kilograms': 1, '千克': 1, '公斤': 1,
+                        'lb': 0.453592, 'lbs': 0.453592, 'pound': 0.453592, 'pounds': 0.453592, '磅': 0.453592,
+                        'oz': 0.0283495, 'ounce': 0.0283495, 'ounces': 0.0283495, '盎司': 0.0283495,
+                    };
+
+                    const factor = factors[unit];
+
+                    if (factor === undefined) {
+                        console.warn(`[convertToKg] 无法识别的单位: "${sourceUnit}"，将直接返回原始值: ${numericValue}`);
+                        return numericValue; // 如果单位未知，返回原始值并警告
+                    }
+
+                    return numericValue * factor;
+                }
+            };
+
             const templateBuffer = Uint8Array.from(atob(templateBase64), c => c.charCodeAt(0)).buffer;
             const groupedByFbaId = skuItems.reduce((acc, item) => { (acc[item.fbaId] = acc[item.fbaId] || { shipment: item.shipment, skuItems: [] }).skuItems.push(item); return acc; }, {});
             
@@ -72,63 +110,43 @@
                 boxItems.forEach(item => { if (!boxesMap.has(item.boxId)) { boxesMap.set(item.boxId, { id: item.boxId, name: item.boxName, weight: item.weight, length: item.length, width: item.width, height: item.height, dimensions: `${item.length}*${item.width}*${item.height}`, contents: [] }); } boxesMap.get(item.boxId).contents.push({ sku: item.sku, msku: item.msku, fnsku: item.fnsku, quantity: item.quantityInBox, picUrl: item.url, ...skuItemsMap.get(item.sku) }); });
                 let boxes = Array.from(boxesMap.values());
 
-                // ---【V4.0 智能合并逻辑开始】---
                 modal.showLoading(`(3/5) 分析并合并相同且连续的箱子...`);
-                
-                // 1. 按指纹初步分组
                 const boxGroupsByFingerprint = new Map();
                 boxes.forEach(box => {
                     const sortedContents = [...box.contents].sort((a, b) => a.sku.localeCompare(b.sku));
                     const contentFingerprint = JSON.stringify(sortedContents.map(c => ({ sku: c.sku, q: c.quantity })));
                     const physicalFingerprint = `W${box.weight}L${box.length}W${box.width}H${box.height}`;
                     const fullFingerprint = `${contentFingerprint}|${physicalFingerprint}`;
-                    if (!boxGroupsByFingerprint.has(fullFingerprint)) {
-                        boxGroupsByFingerprint.set(fullFingerprint, []);
-                    }
+                    if (!boxGroupsByFingerprint.has(fullFingerprint)) { boxGroupsByFingerprint.set(fullFingerprint, []); }
                     boxGroupsByFingerprint.get(fullFingerprint).push(box);
                 });
 
                 const mergedBoxes = [];
                 const mergedBoxItems = [];
-                
-                const getBoxNumber = (boxId) => {
-                    const match = boxId.match(/(\d+)$/);
-                    return match ? parseInt(match[0], 10) : -1;
-                };
+                const getBoxNumber = (boxId) => { const match = boxId.match(/(\d+)$/); return match ? parseInt(match[0], 10) : -1; };
 
-                // 2. 在每个指纹组内，寻找连续子分组并处理
                 for (const group of boxGroupsByFingerprint.values()) {
                     if (group.length === 0) continue;
-
-                    // 按箱号排序
                     group.sort((a, b) => getBoxNumber(a.id) - getBoxNumber(b.id));
-
                     let currentSubGroup = [group[0]];
-
                     for (let i = 1; i < group.length; i++) {
                         const prevBoxNum = getBoxNumber(group[i-1].id);
                         const currentBoxNum = getBoxNumber(group[i].id);
-
                         if (currentBoxNum === prevBoxNum + 1) {
-                            // 箱号是连续的，加入当前子分组
                             currentSubGroup.push(group[i]);
                         } else {
-                            // 箱号不连续，处理已找到的子分组，并开始新的子分组
                             processSubGroup(currentSubGroup);
                             currentSubGroup = [group[i]];
                         }
                     }
-                    // 处理最后一个子分组
                     processSubGroup(currentSubGroup);
                 }
 
                 function processSubGroup(subGroup) {
                     if (subGroup.length === 0) return;
-
                     const representativeBox = subGroup[0];
                     const boxCount = subGroup.length;
                     const boxIds = subGroup.map(b => b.id);
-                    
                     let consolidatedBoxId;
                     if (boxCount <= 1) {
                         consolidatedBoxId = representativeBox.id;
@@ -137,26 +155,22 @@
                         const endNum = startNum + boxCount - 1;
                         consolidatedBoxId = `${representativeBox.id}-${endNum}`;
                     }
-                    
-                    mergedBoxes.push({
-                        count: boxCount,
-                        totalWeight: representativeBox.weight * boxCount,
-                        name: boxIds.join(', '),
-                        ...representativeBox
-                    });
-                    
+                    mergedBoxes.push({ count: boxCount, totalWeight: representativeBox.weight * boxCount, name: boxIds.join(', '), ...representativeBox });
                     const itemsInRepBox = boxItems.filter(item => item.boxId === representativeBox.id);
-                    itemsInRepBox.forEach(item => {
-                        mergedBoxItems.push({
-                            ...item,
-                            boxId: consolidatedBoxId,
-                            boxCount: boxCount,
-                        });
-                    });
+                    itemsInRepBox.forEach(item => { mergedBoxItems.push({ ...item, boxId: consolidatedBoxId, boxCount: boxCount, }); });
                 }
-                // ---【智能合并逻辑结束】---
 
-                const initialContext = { shipment: { id: packingData.shipmentId, totalBoxNum: boxes.length, totalWeight: boxes.reduce((sum, box) => sum + box.weight, 0).toFixed(2), address: shipment.address, warehouseId: shipment.warehouseId }, boxes: boxes, boxItems: boxItems, skuItems: groupSkuItems, globalInfo: globalInfo, mergedBoxes: mergedBoxes, mergedBoxItems: mergedBoxItems };
+                const initialContext = { 
+                    shipment: { id: packingData.shipmentId, totalBoxNum: boxes.length, totalWeight: boxes.reduce((sum, box) => sum + box.weight, 0).toFixed(2), address: shipment.address, warehouseId: shipment.warehouseId }, 
+                    boxes: boxes, 
+                    boxItems: boxItems, 
+                    skuItems: groupSkuItems, 
+                    globalInfo: globalInfo,
+                    mergedBoxes: mergedBoxes,
+                    mergedBoxItems: mergedBoxItems,
+                    helpers: helpers // 【V4.1 新增】注入辅助函数
+                };
+
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(templateBuffer);
                 const worksheet = workbook.worksheets[0];
