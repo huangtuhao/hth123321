@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         领星ERP-FBA清关发票生成助手
 // @namespace    http://tampermonkey.net/
-// @version      4.1
-// @description  (V4.1) 新增功能：模板中可通过 `helpers.convertToKg(value, unit)` 辅助函数，轻松将g, lb, oz等单位统一转换为KG，简化模板逻辑。
+// @version      4.3
+// @description  (V4.3) 重大更新：移除缓存自动更新。在模板选择界面新增手动管理功能：为内置模板提供[强制更新]按钮，为自定义模板提供[删除]按钮，让您完全掌控模板。
 // @author       Your Assistant & User
 // @match        *://erp.lingxing.com/*
 // @grant        GM_getValue
@@ -23,15 +23,15 @@
         ],
         STORAGE_KEY: 'LX_INVOICE_HELPER_DATA_V1',
         USER_TEMPLATE_KEY: 'LX_USER_TEMPLATE_V3_8',
-        BUILT_IN_CACHE_KEY: 'LX_BUILT_IN_CACHE_V1',
+        BUILT_IN_CACHE_KEY: 'LX_BUILT_IN_CACHE_V4_3', // 更新缓存键以废弃旧的带时间戳的缓存结构
         LAST_SELECTED_KEY: 'LX_LAST_SELECTED_TEMPLATE_V1',
         CUSTOM_TEMPLATE_IDENTIFIER: 'user_custom_template'
     };
 
-    // --- UI与通知模块 (保持不变) ---
-    function addGlobalStyle() { const css = ` .lx-invoice-helper-btn { position: fixed; right: 40px; bottom: 100px; z-index: 9999; padding: 12px 20px; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: all 0.2s ease-in-out; background-color: #67C23A; } .lx-invoice-helper-btn:hover { background-color: #85ce61; transform: translateY(-2px); } .lx-invoice-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); z-index: 10000; display: flex; justify-content: center; align-items: center; } .lx-invoice-modal-content { background-color: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 95%; max-width: 1200px; max-height: 90vh; display: flex; flex-direction: column; } .lx-invoice-modal-header { font-size: 22px; font-weight: 600; color: #303133; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #DCDFE6; } .lx-invoice-modal-body { overflow-y: auto; padding-right: 15px; } .lx-invoice-modal-footer { margin-top: 25px; padding-top: 15px; border-top: 1px solid #DCDFE6; display: flex; justify-content: flex-end; } .lx-invoice-modal-btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin-left: 10px; } .lx-invoice-modal-btn-primary { background-color: #67C23A; color: white; } .lx-invoice-modal-btn-secondary { background-color: #E9E9EB; color: #606266; } .lx-invoice-input-table { width: 100%; border-collapse: collapse; font-size: 12px; } .lx-invoice-input-table th, .lx-invoice-input-table td { padding: 8px; text-align: left; border: 1px solid #EBEEF5; vertical-align: middle; } .lx-invoice-input-table thead th { background-color: #FAFAFA; font-weight: 600; position: sticky; top: -1px; z-index: 1; } .lx-invoice-input-table input[type="text"], .lx-invoice-input-table input[type="number"] { width: 100%; padding: 6px; border: 1px solid #DCDFE6; border-radius: 4px; box-sizing: border-box; font-size: 12px; } .lx-shipment-list { list-style: none; padding: 0; margin: 0; } .lx-shipment-list li { padding: 10px; border-bottom: 1px solid #eee; } .lx-shipment-list label { display: flex; align-items: center; cursor: pointer; } .lx-shipment-list input { margin-right: 10px; } .lx-template-select-label { font-size: 14px; color: #606266; margin-bottom: 8px; display: block; } .lx-template-select { width: 100%; padding: 8px; border: 1px solid #DCDFE6; border-radius: 4px; font-size: 14px; margin-bottom: 20px; } .lx-template-upload-btn { background-color: #409EFF; color: white; } #lx-select-all-shipments-label { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; } `; const styleNode = document.createElement('style'); styleNode.appendChild(document.createTextNode(css)); document.head.appendChild(styleNode); }
+    // --- UI与通知模块 (新增按钮样式) ---
+    function addGlobalStyle() { const css = ` .lx-invoice-helper-btn { position: fixed; right: 40px; bottom: 100px; z-index: 9999; padding: 12px 20px; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: all 0.2s ease-in-out; background-color: #67C23A; } .lx-invoice-helper-btn:hover { background-color: #85ce61; transform: translateY(-2px); } .lx-invoice-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); z-index: 10000; display: flex; justify-content: center; align-items: center; } .lx-invoice-modal-content { background-color: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 95%; max-width: 1200px; max-height: 90vh; display: flex; flex-direction: column; } .lx-invoice-modal-header { font-size: 22px; font-weight: 600; color: #303133; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #DCDFE6; } .lx-invoice-modal-body { overflow-y: auto; padding-right: 15px; } .lx-invoice-modal-footer { margin-top: 25px; padding-top: 15px; border-top: 1px solid #DCDFE6; display: flex; justify-content: flex-end; } .lx-invoice-modal-btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin-left: 10px; } .lx-invoice-modal-btn-primary { background-color: #67C23A; color: white; } .lx-invoice-modal-btn-secondary { background-color: #E9E9EB; color: #606266; } .lx-invoice-modal-btn-warning { background-color: #E6A23C; color: white; } .lx-invoice-modal-btn-danger { background-color: #F56C6C; color: white; } .lx-invoice-input-table { width: 100%; border-collapse: collapse; font-size: 12px; } .lx-invoice-input-table th, .lx-invoice-input-table td { padding: 8px; text-align: left; border: 1px solid #EBEEF5; vertical-align: middle; } .lx-invoice-input-table thead th { background-color: #FAFAFA; font-weight: 600; position: sticky; top: -1px; z-index: 1; } .lx-invoice-input-table input[type="text"], .lx-invoice-input-table input[type="number"] { width: 100%; padding: 6px; border: 1px solid #DCDFE6; border-radius: 4px; box-sizing: border-box; font-size: 12px; } .lx-shipment-list { list-style: none; padding: 0; margin: 0; } .lx-shipment-list li { padding: 10px; border-bottom: 1px solid #eee; } .lx-shipment-list label { display: flex; align-items: center; cursor: pointer; } .lx-shipment-list input { margin-right: 10px; } .lx-template-select-label { font-size: 14px; color: #606266; margin-bottom: 8px; display: block; } .lx-template-select { width: 100%; padding: 8px; border: 1px solid #DCDFE6; border-radius: 4px; font-size: 14px; } .lx-template-upload-btn { background-color: #409EFF; color: white; } #lx-select-all-shipments-label { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; } `; const styleNode = document.createElement('style'); styleNode.appendChild(document.createTextNode(css)); document.head.appendChild(styleNode); }
     const modal = { create(id, title, bodyContent, footerButtons) { this.hide(id); const overlay = document.createElement('div'); overlay.className = 'lx-invoice-modal-overlay'; overlay.id = id; overlay.innerHTML = `<div class="lx-invoice-modal-content"><div class="lx-invoice-modal-header">${title}</div><div class="lx-invoice-modal-body">${bodyContent}</div>${footerButtons ? `<div class="lx-invoice-modal-footer">${footerButtons}</div>` : ''}</div>`; document.body.appendChild(overlay); overlay.querySelector('.lx-invoice-modal-content').addEventListener('click', e => e.stopPropagation()); return overlay; }, hide(id) { const el = document.getElementById(id); if (el) el.remove(); }, showLoading(message = '请稍候...') { this.create('lx-invoice-loading-modal', '处理中', `<div style="text-align:center; padding: 40px 0;">${message}</div>`); }, hideLoading() { this.hide('lx-invoice-loading-modal'); } };
-    const notify = { _showMessage(type, message) { try { const vueInstance = document.querySelector('#app')?.__vue__; if (vueInstance && vueInstance.$message) { vueInstance.$message[type](message); } else { alert(message); } } catch (e) { console.error("Notification system failed, falling back to alert.", e); alert(message); } }, success(message) { this._showMessage('success', message); }, error(message) { this._showMessage('error', message); } };
+    const notify = { _showMessage(type, message) { try { const vueInstance = document.querySelector('#app')?.__vue__; if (vueInstance && vueInstance.$message) { vueInstance.$message[type](message); } else { alert(message); } } catch (e) { console.error("Notification system failed, falling back to alert.", e); alert(message); } }, success(message) { this._showMessage('success', message); }, error(message) { this._showMessage('error', message); }, info(message) { this._showMessage('info', message); } };
 
     // --- 模板引擎与辅助函数 (保持不变) ---
     const templateHelpers = {
@@ -52,46 +52,113 @@
         async showConfirmationModal(selectedShipments, globalInfo, productDetailsMap, vueInstance) { const savedData = await GM_getValue(CONFIG.STORAGE_KEY, {}); let tableRowsHtml = ''; const allInvoiceItems = []; selectedShipments.forEach(shipment => { shipment.itemList.forEach(itemInShipment => { const planItem = globalInfo.inboundPlanItemVOS.find(p => p.sku === itemInShipment.sku); if (!planItem) return; const productDetail = productDetailsMap.get(planItem.productId) || {}; const savedItemData = savedData[planItem.sku] || {}; const boxCount = Math.round(itemInShipment.quantity / planItem.quantityInBox); if (boxCount === 0) return; const invoiceItem = { shipment: shipment, planItem: planItem, fbaId: shipment.shipmentConfirmationId, refId: shipment.amazonReferenceId, boxCount: boxCount, grossWeightPerBox: planItem.weight, pcsPerBox: planItem.quantityInBox, productWeight: (planItem.weight / planItem.quantityInBox).toFixed(4), product: productDetail, declaration: productDetail.product_declaration_list || {}, clearance: productDetail.product_clearance_list || {}, }; Object.assign(invoiceItem, { nameCn: productDetail.bg_customs_export_name || planItem.productName, hscode: savedItemData.hscode || invoiceItem.clearance.customs_clearance_hs_code || invoiceItem.declaration.customs_declaration_hs_code || productDetail.bg_export_hs_code || '', price: savedItemData.price || invoiceItem.clearance.customs_clearance_price || invoiceItem.declaration.customs_import_price || productDetail.bg_customs_import_price || '0.00', material: savedItemData.material || invoiceItem.clearance.customs_clearance_material || productDetail.cg_product_material || '', usage: savedItemData.usage || invoiceItem.clearance.customs_clearance_usage || '', brand: savedItemData.brand || productDetail.brand_name || '', model: savedItemData.model || productDetail.model || planItem.sku, }); allInvoiceItems.push(invoiceItem); }); }); allInvoiceItems.forEach((item, index) => { tableRowsHtml += `<tr data-index="${index}"><td title="${item.fbaId}">${item.fbaId.slice(0,15)}...</td><td>${item.planItem.sku}</td><td>${item.nameCn}</td><td><input type="text" value="${item.hscode}" data-field="hscode"></td><td><input type="number" step="0.01" value="${item.price}" data-field="price"></td><td><input type="text" value="${item.material}" data-field="material"></td><td><input type="text" value="${item.usage}" data-field="usage"></td><td><input type="text" value="${item.brand}" data-field="brand"></td><td><input type="text" value="${item.model}" data-field="model"></td></tr>`; }); const tableHtml = `<p style="margin-bottom: 15px; color: #909399;">请检查或补充以下报关信息...</p><div style="max-height: 50vh; overflow: auto;"><table class="lx-invoice-input-table"><thead><tr><th>FBA编号</th><th>SKU</th><th>中文品名</th><th>HSCODE</th><th>单价(USD)</th><th>材质</th><th>用途</th><th>品牌</th><th>规格型号</th></tr></thead><tbody>${tableRowsHtml}</tbody></table></div>`; return new Promise(resolve => { const footer = `<button id="lx-invoice-cancel-final-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-secondary">取消</button><button id="lx-invoice-generate-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-primary">保存并生成文件</button>`; const confirmModal = modal.create('lx-invoice-confirm-modal', '确认报关信息', tableHtml, footer); document.getElementById('lx-invoice-cancel-final-btn').onclick = () => { modal.hide('lx-invoice-confirm-modal'); resolve(null); }; document.getElementById('lx-invoice-generate-btn').onclick = async () => { const newSavedData = await GM_getValue(CONFIG.STORAGE_KEY, {}); confirmModal.querySelectorAll('tbody tr').forEach(tr => { const index = parseInt(tr.dataset.index); const sku = allInvoiceItems[index].planItem.sku; const hscode = tr.querySelector('[data-field="hscode"]').value.trim(); const price = tr.querySelector('[data-field="price"]').value.trim(); const material = tr.querySelector('[data-field="material"]').value.trim(); const usage = tr.querySelector('[data-field="usage"]').value.trim(); const brand = tr.querySelector('[data-field="brand"]').value.trim(); const model = tr.querySelector('[data-field="model"]').value.trim(); Object.assign(allInvoiceItems[index], { hscode, price, material, usage, brand, model }); if (!newSavedData[sku]) newSavedData[sku] = {}; Object.assign(newSavedData[sku], { hscode, price, material, usage, brand, model }); }); await GM_setValue(CONFIG.STORAGE_KEY, newSavedData); modal.hide('lx-invoice-confirm-modal'); resolve({ skuItems: allInvoiceItems, globalInfo, vueInstance }); }; }); },
         async fetchImage(url) { if (!url) return null; return new Promise((resolve) => { GM_xmlhttpRequest({ method: 'GET', url: url, responseType: 'arraybuffer', onload: function(response) { if (response.status === 200) { resolve(response.response); } else { console.warn(`下载图片失败: ${url}, 状态: ${response.status}`); resolve(null); } }, onerror: function(error) { console.error(`下载图片时发生网络错误: ${url}`, error); resolve(null); } }); }); },
         async fetchPackingDetails(shipment, vueInstance) { if (!vueInstance.$gwPost) { const errorMsg = "无法在Vue实例上找到 $gwPost 方法，脚本可能需要更新。"; notify.error(errorMsg); throw new Error(errorMsg); } const payload = { shipmentId: shipment.shipmentId, inboundPlanId: shipment.inboundPlanId, sid: vueInstance.info.sid, }; try { const response = await vueInstance.$gwPost("/amz-sta-server/inbound-packing/getShipmentPackingDetail", payload); if (response.code === 1 && response.data) { return response.data; } else { throw new Error(response.msg || 'API返回数据无效'); } } catch (error) { console.error(`使用 $gwPost 获取货件 ${shipment.shipmentConfirmationId} 装箱详情失败:`, error); notify.error(`获取装箱详情失败: ${error.message}`); return null; } },
-        async selectTemplate() { return new Promise(async (resolve) => { const lastSelected = await GM_getValue(CONFIG.LAST_SELECTED_KEY, CONFIG.BUILT_IN_TEMPLATES[0]?.name); const userTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY); let optionsHtml = ''; CONFIG.BUILT_IN_TEMPLATES.forEach(t => { optionsHtml += `<option value="${t.name}" ${t.name === lastSelected ? 'selected' : ''}>${t.name}</option>`; }); if (userTemplateObj && userTemplateObj.name && userTemplateObj.data) { const isSelected = lastSelected === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER; optionsHtml += `<option value="${CONFIG.CUSTOM_TEMPLATE_IDENTIFIER}" ${isSelected ? 'selected' : ''}>${userTemplateObj.name} (自定义)</option>`; } const bodyHtml = ` <label for="lx-template-select" class="lx-template-select-label">请选择一个发票模板:</label> <select id="lx-template-select" class="lx-template-select">${optionsHtml}</select> <p style="font-size: 12px; color: #909399; margin-top: -10px; margin-bottom: 20px;">选择后将自动保存为默认选项。</p> <button id="lx-upload-new-btn" class="lx-invoice-modal-btn lx-template-upload-btn">上传新的自定义模板</button> <input type="file" id="lx-template-file-input" style="display: none;" accept=".xlsx, .xls">`; const footer = ` <button id="lx-template-cancel-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-secondary">取消</button> <button id="lx-template-next-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-primary">下一步</button>`; const templateModal = modal.create('lx-template-select-modal', '选择发票模板', bodyHtml, footer); const fileInput = document.getElementById('lx-template-file-input'); document.getElementById('lx-upload-new-btn').onclick = () => fileInput.click(); fileInput.onchange = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (event) => { const base64 = event.target.result.substring(event.target.result.indexOf(',') + 1); const newTemplateObj = { name: file.name, data: base64 }; await GM_setValue(CONFIG.USER_TEMPLATE_KEY, newTemplateObj); await GM_setValue(CONFIG.LAST_SELECTED_KEY, CONFIG.CUSTOM_TEMPLATE_IDENTIFIER); notify.success(`自定义模板 "${file.name}" 上传成功！`); modal.hide('lx-template-select-modal'); resolve(this.selectTemplate()); }; reader.readAsDataURL(file); }; document.getElementById('lx-template-cancel-btn').onclick = () => { modal.hide('lx-template-select-modal'); resolve(null); }; document.getElementById('lx-template-next-btn').onclick = async () => { const selectedValue = document.getElementById('lx-template-select').value; await GM_setValue(CONFIG.LAST_SELECTED_KEY, selectedValue); if (selectedValue === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER) { const latestUserTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY); if (latestUserTemplateObj && latestUserTemplateObj.data) { modal.hide('lx-template-select-modal'); resolve(latestUserTemplateObj.data); } else { notify.error("无法加载自定义模板，请尝试重新上传。"); } return; } const selectedTemplateConfig = CONFIG.BUILT_IN_TEMPLATES.find(t => t.name === selectedValue); if (!selectedTemplateConfig) { notify.error("选择的内置模板配置不存在！"); return; } const cache = await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {}); if (cache[selectedTemplateConfig.url]) { notify.success(`已从缓存加载模板: ${selectedValue}`); modal.hide('lx-template-select-modal'); resolve(cache[selectedTemplateConfig.url]); return; } modal.showLoading(`首次加载，正在从网络获取模板: ${selectedValue}...`); try { const response = await this.fetchImage(selectedTemplateConfig.url); if (!response) throw new Error("下载失败，请检查URL或网络。"); const base64 = templateHelpers.arrayBufferToBase64(response); cache[selectedTemplateConfig.url] = base64; await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache); notify.success(`模板获取并缓存成功！`); modal.hide('lx-template-select-modal'); modal.hideLoading(); resolve(base64); } catch (error) { notify.error(`获取模板失败: ${error.message}`); modal.hideLoading(); } }; }); },
+        
+        // 【V4.3 核心升级】模板选择界面重构，增加手动管理功能
+        async selectTemplate() {
+            return new Promise(async (resolve) => {
+                const lastSelected = await GM_getValue(CONFIG.LAST_SELECTED_KEY, CONFIG.BUILT_IN_TEMPLATES[0]?.name);
+                const userTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY);
+                let optionsHtml = '';
+                CONFIG.BUILT_IN_TEMPLATES.forEach(t => { optionsHtml += `<option value="${t.name}" ${t.name === lastSelected ? 'selected' : ''}>${t.name}</option>`; });
+                if (userTemplateObj && userTemplateObj.name && userTemplateObj.data) { const isSelected = lastSelected === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER; optionsHtml += `<option value="${CONFIG.CUSTOM_TEMPLATE_IDENTIFIER}" ${isSelected ? 'selected' : ''}>${userTemplateObj.name} (自定义)</option>`; }
+                
+                const bodyHtml = `
+                    <label for="lx-template-select" class="lx-template-select-label">请选择一个发票模板:</label>
+                    <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                        <select id="lx-template-select" class="lx-template-select" style="flex-grow: 1; margin-bottom: 0;">${optionsHtml}</select>
+                        <div id="lx-template-actions" style="margin-left: 10px; white-space: nowrap;"></div>
+                    </div>
+                    <p style="font-size: 12px; color: #909399; margin-top: -10px; margin-bottom: 20px;">选择后将自动保存为默认选项。</p>
+                    <button id="lx-upload-new-btn" class="lx-invoice-modal-btn lx-template-upload-btn">上传新的自定义模板</button>
+                    <input type="file" id="lx-template-file-input" style="display: none;" accept=".xlsx, .xls">`;
+                const footer = ` <button id="lx-template-cancel-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-secondary">取消</button> <button id="lx-template-next-btn" class="lx-invoice-modal-btn lx-invoice-modal-btn-primary">下一步</button>`;
+                
+                const templateModal = modal.create('lx-template-select-modal', '选择发票模板', bodyHtml, footer);
+                const fileInput = document.getElementById('lx-template-file-input');
+                const templateSelect = document.getElementById('lx-template-select');
+                const actionsContainer = document.getElementById('lx-template-actions');
+
+                const updateActionButtons = async () => {
+                    const selectedValue = templateSelect.value;
+                    actionsContainer.innerHTML = ''; // 清空旧按钮
+
+                    if (selectedValue === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER) {
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.innerText = '删除此模板';
+                        deleteBtn.className = 'lx-invoice-modal-btn lx-invoice-modal-btn-danger';
+                        deleteBtn.onclick = async () => {
+                            if (confirm(`确定要删除自定义模板 "${userTemplateObj.name}" 吗？此操作不可恢复。`)) {
+                                await GM_setValue(CONFIG.USER_TEMPLATE_KEY, null);
+                                notify.success('自定义模板已删除！');
+                                modal.hide('lx-template-select-modal');
+                                resolve(this.selectTemplate()); // 重新打开选择器刷新列表
+                            }
+                        };
+                        actionsContainer.appendChild(deleteBtn);
+                    } else {
+                        const updateBtn = document.createElement('button');
+                        updateBtn.innerText = '强制更新';
+                        updateBtn.className = 'lx-invoice-modal-btn lx-invoice-modal-btn-warning';
+                        updateBtn.onclick = async () => {
+                            const templateConfig = CONFIG.BUILT_IN_TEMPLATES.find(t => t.name === selectedValue);
+                            if (!templateConfig) return;
+                            const cache = await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {});
+                            if (cache[templateConfig.url]) {
+                                delete cache[templateConfig.url];
+                                await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache);
+                                notify.success(`模板 "${selectedValue}" 的缓存已清除！下次将重新下载。`);
+                            } else {
+                                notify.info('此模板无本地缓存，无需更新。');
+                            }
+                        };
+                        actionsContainer.appendChild(updateBtn);
+                    }
+                };
+
+                templateSelect.onchange = updateActionButtons;
+                updateActionButtons(); // 初始化按钮状态
+
+                document.getElementById('lx-upload-new-btn').onclick = () => fileInput.click();
+                fileInput.onchange = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (event) => { const base64 = event.target.result.substring(event.target.result.indexOf(',') + 1); const newTemplateObj = { name: file.name, data: base64 }; await GM_setValue(CONFIG.USER_TEMPLATE_KEY, newTemplateObj); await GM_setValue(CONFIG.LAST_SELECTED_KEY, CONFIG.CUSTOM_TEMPLATE_IDENTIFIER); notify.success(`自定义模板 "${file.name}" 上传成功！`); modal.hide('lx-template-select-modal'); resolve(this.selectTemplate()); }; reader.readAsDataURL(file); };
+                document.getElementById('lx-template-cancel-btn').onclick = () => { modal.hide('lx-template-select-modal'); resolve(null); };
+                
+                document.getElementById('lx-template-next-btn').onclick = async () => {
+                    const selectedValue = templateSelect.value;
+                    await GM_setValue(CONFIG.LAST_SELECTED_KEY, selectedValue);
+                    if (selectedValue === CONFIG.CUSTOM_TEMPLATE_IDENTIFIER) { const latestUserTemplateObj = await GM_getValue(CONFIG.USER_TEMPLATE_KEY); if (latestUserTemplateObj && latestUserTemplateObj.data) { modal.hide('lx-template-select-modal'); resolve(latestUserTemplateObj.data); } else { notify.error("无法加载自定义模板，请尝试重新上传。"); } return; }
+                    const selectedTemplateConfig = CONFIG.BUILT_IN_TEMPLATES.find(t => t.name === selectedValue);
+                    if (!selectedTemplateConfig) { notify.error("选择的内置模板配置不存在！"); return; }
+                    
+                    const cache = await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {});
+                    if (cache[selectedTemplateConfig.url]) {
+                        notify.success(`已从缓存加载模板: ${selectedValue}`);
+                        modal.hide('lx-template-select-modal');
+                        resolve(cache[selectedTemplateConfig.url]);
+                        return;
+                    }
+
+                    modal.showLoading(`正在从网络获取模板: ${selectedValue}...`);
+                    try {
+                        const response = await this.fetchImage(selectedTemplateConfig.url);
+                        if (!response) throw new Error("下载失败，请检查URL或网络。");
+                        const base64 = templateHelpers.arrayBufferToBase64(response);
+                        cache[selectedTemplateConfig.url] = base64;
+                        await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache);
+                        notify.success(`模板获取并缓存成功！`);
+                        modal.hide('lx-template-select-modal');
+                        modal.hideLoading();
+                        resolve(base64);
+                    } catch (error) {
+                        notify.error(`获取模板失败: ${error.message}`);
+                        modal.hideLoading();
+                    }
+                };
+            });
+        },
         
         async processTemplateAndDownload({ templateBase64, skuItems, globalInfo, vueInstance }) {
-            // 【V4.1 新增】定义辅助函数对象
             const helpers = {
-                /**
-                 * 将给定的重量值和单位转换为千克(KG)。
-                 * @param {number|string} value - 重量值。
-                 * @param {string} sourceUnit - 原始单位 (如 'g', 'kg', 'lb', 'oz')。
-                 * @returns {number} - 转换后的千克(KG)值。
-                 */
-                convertToKg: (value, sourceUnit) => {
-                    const numericValue = parseFloat(value);
-                    if (isNaN(numericValue)) {
-                        return 0; // 如果值无效，返回0
-                    }
-
-                    if (!sourceUnit || typeof sourceUnit !== 'string') {
-                        console.warn(`[convertToKg] 未提供单位，将直接返回原始值: ${numericValue}`);
-                        return numericValue;
-                    }
-
-                    const unit = sourceUnit.toLowerCase().trim();
-                    
-                    const factors = {
-                        'g': 0.001, 'gram': 0.001, 'grams': 0.001, '克': 0.001,
-                        'kg': 1, 'kilogram': 1, 'kilograms': 1, '千克': 1, '公斤': 1,
-                        'lb': 0.453592, 'lbs': 0.453592, 'pound': 0.453592, 'pounds': 0.453592, '磅': 0.453592,
-                        'oz': 0.0283495, 'ounce': 0.0283495, 'ounces': 0.0283495, '盎司': 0.0283495,
-                    };
-
-                    const factor = factors[unit];
-
-                    if (factor === undefined) {
-                        console.warn(`[convertToKg] 无法识别的单位: "${sourceUnit}"，将直接返回原始值: ${numericValue}`);
-                        return numericValue; // 如果单位未知，返回原始值并警告
-                    }
-
-                    return numericValue * factor;
-                }
+                convertToKg: (value, sourceUnit) => { const numericValue = parseFloat(value); if (isNaN(numericValue)) { return 0; } if (!sourceUnit || typeof sourceUnit !== 'string') { console.warn(`[convertToKg] 未提供单位，将直接返回原始值: ${numericValue}`); return numericValue; } const unit = sourceUnit.toLowerCase().trim(); const factors = { 'g': 0.001, 'gram': 0.001, 'grams': 0.001, '克': 0.001, 'kg': 1, 'kilogram': 1, 'kilograms': 1, '千克': 1, '公斤': 1, 'lb': 0.453592, 'lbs': 0.453592, 'pound': 0.453592, 'pounds': 0.453592, '磅': 0.453592, 'oz': 0.0283495, 'ounce': 0.0283495, 'ounces': 0.0283495, '盎司': 0.0283495, }; const factor = factors[unit]; if (factor === undefined) { console.warn(`[convertToKg] 无法识别的单位: "${sourceUnit}"，将直接返回原始值: ${numericValue}`); return numericValue; } return numericValue * factor; }
             };
 
             const templateBuffer = Uint8Array.from(atob(templateBase64), c => c.charCodeAt(0)).buffer;
@@ -168,7 +235,7 @@
                     globalInfo: globalInfo,
                     mergedBoxes: mergedBoxes,
                     mergedBoxItems: mergedBoxItems,
-                    helpers: helpers // 【V4.1 新增】注入辅助函数
+                    helpers: helpers
                 };
 
                 const workbook = new ExcelJS.Workbook();
