@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流方案成本与时效分析图</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        h2, h3 {
+            text-align: center;
+            color: #111;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        svg {
+            width: 100%;
+            height: auto;
+            overflow: visible;
+        }
+        .axis-label {
+            font-size: 12px;
+            font-weight: 500;
+            fill: #555;
+        }
+        .grid-line {
+            stroke: #e0e0e0;
+            stroke-dasharray: 2,2;
+        }
+        .data-point {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .data-point:hover {
+            r: 8;
+            opacity: 1;
+        }
+        .data-label {
+            font-size: 11px;
+            font-weight: bold;
+            fill: #fff;
+            text-anchor: middle;
+            pointer-events: none;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.2s;
+            transform: translate(-50%, -100%);
+            white-space: pre;
+            line-height: 1.6;
+        }
+        .legend {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>物流方案成本与时效综合分析</h2>
+    <div class="chart-container">
+        <svg id="logistics-chart" viewBox="0 0 500 350"></svg>
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+    <h3>图例说明</h3>
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #d9534f;"></div>
+            <span>高性价比区 (省钱优先)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #f0ad4e;"></div>
+            <span>均衡选择区 (平衡成本与时效)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #5cb85c;"></div>
+            <span>时效优先区 (速度优先)</span>
+        </div>
+    </div>
+
+<script>
+const data = [
+    { id: 1, name: "MIT2+洛杉矶海卡", cost: 1148.08, time: 25.5, rank: 8, costPerDay: 18.09 },
+    { id: 2, name: "RYY2+萨凡纳海卡", cost: 994.44, time: 43, rank: 3, costPerDay: 99.54 },
+    { id: 3, name: "HGR6+纽约海卡", cost: 795.36, time: 45, rank: '基准', costPerDay: Infinity },
+    { id: 4, name: "RYY2+洛杉矶海卡", cost: 1084.84, time: 30.5, rank: 4, costPerDay: 19.96 },
+    { id: 5, name: "HGR6+洛杉矶海卡", cost: 903.84, time: 30.5, rank: 1, costPerDay: 7.48 },
+    { id: 6, name: "RYY2+美东快线", cost: 1148.12, time: 27.5, rank: 7, costPerDay: 20.16 },
+    { id: 7, name: "HGR6+美东快线", cost: 958.08, time: 27.5, rank: 2, costPerDay: 9.30 },
+    { id: 8, name: "MIT2+美森卡派", cost: 1414.76, time: 19, rank: 5, costPerDay: 23.82 },
+    { id: 9, name: "RYY2+美森卡派", cost: 1410.28, time: 24.5, rank: 9, costPerDay: 30.00 },
+    { id: 10, name: "HGR6+美森卡派", cost: 1242.84, time: 24.5, rank: 6, costPerDay: 21.83 }
+];
+
+function getColor(costPerDay) {
+    if (costPerDay < 10) return '#d9534f'; // 高性价比
+    if (costPerDay < 22) return '#f0ad4e'; // 均衡
+    return '#5cb85c'; // 时效优先
+}
+
+const svg = document.getElementById('logistics-chart');
+const tooltip = document.getElementById('tooltip');
+const container = document.querySelector('.chart-container');
+
+const margin = { top: 20, right: 20, bottom: 50, left: 60 };
+const width = 500 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+const x = (time) => margin.left + (time - 15) / (50 - 15) * width;
+const y = (cost) => margin.top + height - (cost - 700) / (1500 - 700) * height;
+
+// Axes and Grid
+const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+svg.appendChild(g);
+
+// Y-axis
+for (let i = 700; i <= 1500; i += 200) {
+    const yPos = y(i);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'grid-line');
+    line.setAttribute('x1', margin.left);
+    line.setAttribute('y1', yPos);
+    line.setAttribute('x2', margin.left + width);
+    line.setAttribute('y2', yPos);
+    g.appendChild(line);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('class', 'axis-label');
+    text.setAttribute('x', margin.left - 10);
+    text.setAttribute('y', yPos + 4);
+    text.setAttribute('text-anchor', 'end');
+    text.textContent = `¥${i}`;
+    g.appendChild(text);
+}
+
+// X-axis
+for (let i = 20; i <= 50; i += 5) {
+    const xPos = x(i);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'grid-line');
+    line.setAttribute('x1', xPos);
+    line.setAttribute('y1', margin.top);
+    line.setAttribute('x2', xPos);
+    linesetAttribute('y2', margin.top + height);
+    g.appendChild(line);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('class', 'axis-label');
+    text.setAttribute('x', xPos);
+    text.setAttribute('y', margin.top + height + 20);
+    text.setAttribute('text-anchor', 'middle');
+    text.textContent = `${i}天`;
+    g.appendChild(text);
+}
+
+// Axis Titles
+const yAxisTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+yAxisTitle.setAttribute('class', 'axis-label');
+yAxisTitle.setAttribute('transform', `rotate(-90)`);
+yAxisTitle.setAttribute('x', -(margin.top + height / 2));
+yAxisTitle.setAttribute('y', 15);
+yAxisTitle.setAttribute('text-anchor', 'middle');
+yAxisTitle.textContent = '总成本 (元)';
+g.appendChild(yAxisTitle);
+
+const xAxisTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+xAxisTitle.setAttribute('class', 'axis-label');
+xAxisTitle.setAttribute('x', margin.left + width / 2);
+xAxisTitle.setAttribute('y', margin.top + height + 40);
+xAxisTitle.setAttribute('text-anchor', 'middle');
+xAxisTitle.textContent = '签收时效 (天)';
+g.appendChild(xAxisTitle);
+
+// Data points
+data.forEach(d => {
+    const pointGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('class', 'data-point');
+    circle.setAttribute('cx', x(d.time));
+    circle.setAttribute('cy', y(d.cost));
+    circle.setAttribute('r', 6);
+    circle.setAttribute('fill', getColor(d.costPerDay));
+    circle.setAttribute('stroke', '#fff');
+    circle.setAttribute('stroke-width', 1.5);
+    
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('class', 'data-label');
+    label.setAttribute('x', x(d.time));
+    label.setAttribute('y', y(d.cost) + 4);
+    label.textContent = d.id;
+
+    pointGroup.appendChild(circle);
+    pointGroup.appendChild(label);
+    g.appendChild(pointGroup);
+
+    pointGroup.addEventListener('mouseover', (e) => {
+        tooltip.style.opacity = 1;
+        tooltip.innerHTML = `
+            <b>方案 #${d.id}: ${d.name}</b><br>
+            总成本: ¥${d.cost.toFixed(2)}<br>
+            签收时效: ${d.time} 天<br>
+            性价比排名: ${d.rank}<br>
+            为缩短1天付出: ¥${d.costPerDay === Infinity ? 'N/A (基准)' : d.costPerDay.toFixed(2)}
+        `;
+    });
+
+    pointGroup.addEventListener('mousemove', (e) => {
+        const rect = container.getBoundingClientRect();
+        tooltip.style.left = `${e.clientX - rect.left}px`;
+        tooltip.style.top = `${e.clientY - rect.top - 10}px`;
+    });
+
+    pointGroup.addEventListener('mouseout', () => {
+        tooltip.style.opacity = 0;
+    });
+});
+</script>
+
+</body>
+</html>

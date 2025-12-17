@@ -304,7 +304,8 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${fbaId}-报关清关信息-${new Date().toISOString().slice(0, 10)}.xlsx`;
+                // 【V4.4 核心修改】拼接货件名称到文件名中
+                a.download = generateCustomsClearanceFilename(shipment.shipmentName, fbaId);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 notify.success(`发票 ${a.download} 已成功生成！`);
@@ -313,6 +314,83 @@
         },
         async run() { try { const templateBase64 = await this.selectTemplate(); if (!templateBase64) return; modal.showLoading('正在获取页面数据...'); const pageData = await this.fetchPageData(); if (!pageData) { modal.hideLoading(); return; } const selectedShipments = pageData.shipmentList.length > 1 ? await this.selectShipment(pageData.shipmentList) : pageData.shipmentList; if (!selectedShipments || selectedShipments.length === 0) { modal.hideLoading(); return; } modal.showLoading('正在获取产品详细信息...'); const productDetailsMap = await this.fetchProductDetails(pageData.globalInfo, pageData.vueInstance); modal.hideLoading(); const finalData = await this.showConfirmationModal(selectedShipments, pageData.globalInfo, productDetailsMap, pageData.vueInstance); if (finalData) { await this.processTemplateAndDownload({ templateBase64, ...finalData }); } } catch (error) { console.error("生成发票主流程失败:", error); notify.error(`操作失败: ${error.message}`); modal.hideLoading(); } }
     };
+
+    /**
+     * 根据 MyShipmentName 格式智能生成报关清关文件名。
+     * 此函数使用“锚点”策略，优先寻找可靠的“目的地-FBA ID”组合，因此对文件名前缀的不规范格式有较强容错性。
+     *
+     * @param {string} myShipmentName - 待检查的货件名称字符串。
+     *   例如："强成-黄土豪-251020-狗冬季衣服-HGR6-FBA192NTBHCX-美东快线"
+     *   或不规范格式："强成黄土豪-251020-狗冬季衣服(含配件)-HGR6-FBA192NTBHCX-美东快线"
+     *
+     * @param {string} fbaId - 当前货件的 FBA ID，用于文件名开头。
+     *   例如："FBA179Q29B5W"
+     *
+     * @returns {string} - 根据规则生成的 .xlsx 文件名。
+     */
+    function generateCustomsClearanceFilename(myShipmentName, fbaId) {
+        // 1. 定义核心“锚点”的正则表达式：目的地仓库代码 + FBA ID
+        // 解释:
+        // ([A-Z0-9]{3,5})  - 第1捕获组 (目的地): 3到5位的大写字母和数字。亚马逊仓库代码的常见格式。
+        // -                - 分隔符
+        // (FBA[A-Z0-9]+)   - 第2捕获组 (FBA ID): 以 "FBA" 开头的字符串。
+        const anchorRegex = /([A-Z0-9]{3,5})-(FBA[A-Z0-9]+)/;
+
+        // 2. 在整个字符串中寻找这个锚点组合
+        const anchorMatch = myShipmentName.match(anchorRegex);
+
+        // 动态生成当前日期的 YYYYMMDD 格式字符串
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const currentDateStr = `${year}${month}${day}`;
+
+        // 3. 如果找不到核心锚点，直接判定为不符合格式
+        if (!anchorMatch) {
+            console.log("验证失败：未能找到'目的地-FBA ID'核心锚点。");
+            return `${fbaId}-报关清关信息-${currentDateStr}.xlsx`;
+        }
+
+        // --- 如果找到了锚点，继续解析 ---
+        console.log("验证成功：已定位'目的地-FBA ID'核心锚点。");
+
+        // 4. 提取锚点信息和基于锚点切分字符串
+        const destination = anchorMatch[1]; // e.g., "HGR6"
+        // anchorMatch[2] 是在字符串中找到的FBA ID，我们文件名用的是传入的 fbaId 参数
+
+        // 锚点之前的所有内容
+        const prefix = myShipmentName.substring(0, anchorMatch.index);
+        // 锚点之后的所有内容
+        let suffix = myShipmentName.substring(anchorMatch.index + anchorMatch[0].length);
+
+        // 提取运输方式 (处理后缀可能带有的前导 '-')
+        const shippingMethod = suffix.startsWith('-') ? suffix.substring(1) : suffix;
+
+        // 5. 在“前缀”部分 (锚点之前的内容) 中寻找品名
+        // 策略：品名被认为是前缀中最后一个6位数字（日期）之后的所有内容。
+        const dateRegex = /(\d{6})/;
+        const dateMatch = prefix.match(dateRegex);
+
+        if (dateMatch) {
+            // 找到了日期，提取品名
+            const dateEndIndex = dateMatch.index + dateMatch[0].length;
+            let productDescription = prefix.substring(dateEndIndex);
+
+            // 清理品名前面可能存在的 '-'
+            productDescription = productDescription.startsWith('-') ? productDescription.substring(1) : productDescription;
+            
+            // 确保品名不为空
+            if (productDescription.trim() !== "" && shippingMethod.trim() !== "") {
+                console.log("成功提取所有部分：品名、目的地、运输方式。");
+                return `${fbaId}-报关清关信息-${currentDateStr}-${productDescription}-${destination}-${shippingMethod}.xlsx`;
+            }
+        }
+
+        // 6. 如果在前缀中找不到日期，或提取的品名/运输方式为空，则无法安全地确定品名，退回简单格式
+        console.log("警告：虽找到锚点，但无法在前缀中可靠地定位品名。");
+        return `${fbaId}-报关清关信息-${currentDateStr}.xlsx`;
+    }
 
     // --- 脚本初始化 (保持不变) ---
     function init() {
