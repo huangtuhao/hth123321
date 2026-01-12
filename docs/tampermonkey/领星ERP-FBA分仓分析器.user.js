@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         领星ERP-FBA分仓分析器 (V4.8 决策增强版)
+// @name         领星ERP-FBA分仓分析器 (V5.1 统计增强版)
 // @namespace    http://tampermonkey.net/
-// @version      4.8
-// @description  集成了加权评分决策模型。在报告页增加“时间价值”滑块，支持按(价格+时效*系数)动态排序，自动高亮最优、最省、最快渠道。
+// @version      5.1
+// @description  在V5.0基础上，新增动态展示“方案总成本（运费+配置费）”和“最快时效”，方便对比不同分仓方案。
 // @author       Your Assistant
 // @match        *://erp.lingxing.com/*
 // @require      https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js
@@ -21,7 +21,7 @@
         hasRates: false,
         cacheTime: null
     };
-    const STORAGE_KEY = 'lx_fba_rates_v4_8_cache';
+    const STORAGE_KEY = 'lx_fba_rates_v5_0_cache';
 
     const ZONE_MAPPING = {
         "WEST": ["ONT8", "LGB8", "LAX9", "SBD1", "SBD2", "GYR2", "GYR3", "LAS1", "SMF3", "SCK4", "PHX7", "PHX5", "FAT2", "OAK3", "SJC7", "XLX7", "PSP3", "IUSJ", "IUSQ"],
@@ -36,18 +36,24 @@
         const css = `
             .lx-control-panel {
                 position: fixed; bottom: 160px; right: 30px; z-index: 9999;
-                background: white; padding: 10px; border-radius: 8px;
+                background: white; padding: 12px; border-radius: 8px;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.1); border: 1px solid #ebeef5;
-                display: flex; flex-direction: column; gap: 6px;
-                font-family: sans-serif; transition: all 0.3s; width: 140px;
+                display: flex; flex-direction: column; align-items: center; gap: 8px;
+                font-family: sans-serif; transition: all 0.3s; width: auto;
+                min-width: 120px;
             }
             .lx-control-panel:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
-            .lx-cache-info { font-size: 11px; color: #909399; text-align: center; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .lx-cache-info { font-size: 11px; color: #909399; text-align: center; margin-bottom: 2px; white-space: nowrap; }
             .lx-cache-info.active { color: #67c23a; font-weight: bold; }
-            .lx-btn { padding: 6px 10px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 5px; transition: background 0.2s; text-decoration: none; }
-            .lx-btn-primary { background: #4f46e5; color: #fff; } /* Indigo-600 */
+
+            .lx-btn {
+                padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer;
+                font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 5px;
+                transition: background 0.2s; text-decoration: none; white-space: nowrap;
+            }
+            .lx-btn-primary { background: #4f46e5; color: #fff; }
             .lx-btn-primary:hover { background: #4338ca; }
-            .lx-btn-success { background: #10b981; color: #fff; } /* Emerald-500 */
+            .lx-btn-success { background: #10b981; color: #fff; }
             .lx-btn-success:hover { background: #059669; }
             .lx-file-input { display: none; }
         `;
@@ -236,7 +242,7 @@
     }
 
     // =================================================================================
-    // 4. 报告生成 (核心修改部分：注入数据与JS逻辑)
+    // 4. 报告生成 (V5.1 增强版)
     // =================================================================================
     function fetchCurrentOption() {
         try {
@@ -261,7 +267,6 @@
         }
         if (!state.hasRates && !confirm('⚠️ 暂无报价数据，报告将无法计算运费。是否继续？')) return;
 
-        // 准备注入到 HTML 中的 JSON 数据
         const injectionData = prepareInjectionData(state.currentDetail, state.rateMap);
         const htmlContent = generateReportHTML(state.currentDetail, injectionData);
 
@@ -274,7 +279,6 @@
         }
     }
 
-    // 将数据预处理为纯 JSON 结构，方便前端 JS 使用
     function prepareInjectionData(detail, rateMap) {
         return detail.shipmentInformationList.map(ship => {
             const wh = ship.wareHouseId ? ship.wareHouseId.toUpperCase() : '未知';
@@ -287,7 +291,6 @@
                 const generalRates = rateMap['ALL_US'] || [];
                 channels = [...specificRates, ...generalRates];
 
-                // 去重
                 const uniqueSet = new Set();
                 channels = channels.filter(item => {
                     const key = `${item.sheet}-${item.channel}-${item.price}`;
@@ -302,7 +305,7 @@
                 shipmentName: ship.shipmentName || '无货件名',
                 weight,
                 count,
-                channels // 包含 {price, avgTime, time, channel, sheet}
+                channels
             };
         });
     }
@@ -320,7 +323,7 @@
                 <meta charset="UTF-8">
                 <title>FBA智能决策 - ${detail.placementOptionId || ''}</title>
                 <style>
-                    :root { --primary: #4f46e5; --primary-light: #e0e7ff; --success: #10b981; --success-light: #d1fae5; --purple: #9333ea; --purple-light: #f3e8ff; --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-500: #64748b; --slate-800: #1e293b; }
+                    :root { --primary: #4f46e5; --primary-light: #e0e7ff; --success: #10b981; --success-light: #d1fae5; --purple: #9333ea; --purple-light: #f3e8ff; --orange: #f97316; --orange-light: #ffedd5; --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-500: #64748b; --slate-800: #1e293b; }
                     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; color: var(--slate-800); }
                     .container { max-width: 1000px; margin: 0 auto; }
 
@@ -332,16 +335,46 @@
                     .stat-val { font-size: 20px; font-weight: 700; color: #111; }
                     .stat-lbl { font-size: 12px; color: var(--slate-500); }
 
-                    /* Control Panel (Slider) */
+                    /* Controls */
                     .controls { background: white; padding: 20px 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; border: 1px solid var(--slate-200); }
-                    .ctrl-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
+                    .ctrl-header { display: flex; justify-content: space-between; margin-bottom: 25px; }
                     .ctrl-title { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
                     .ctrl-val { font-size: 24px; font-weight: 700; color: var(--primary); }
                     .ctrl-val span { font-size: 12px; color: var(--slate-500); font-weight: 400; }
-                    input[type=range] { width: 100%; height: 6px; background: var(--slate-200); border-radius: 5px; outline: none; -webkit-appearance: none; cursor: pointer; }
-                    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: var(--primary); border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+
+                    /* Slider & Ruler Styles */
+                    .slider-container { position: relative; margin-bottom: 30px; padding: 0 5px; }
+                    input[type=range] { width: 100%; height: 6px; background: var(--slate-200); border-radius: 5px; outline: none; -webkit-appearance: none; cursor: pointer; display: block; margin: 0; }
+                    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: var(--primary); border-radius: 50%; cursor: pointer; transition: transform 0.1s; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); position: relative; z-index: 2; }
                     input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
-                    .range-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--slate-500); font-weight: 500; }
+
+                    .ruler { position: relative; height: 20px; margin-top: 8px; font-size: 12px; color: var(--slate-500); }
+                    .tick { position: absolute; top: 0; transform: translateX(-50%); text-align: center; }
+                    .tick-mark { width: 1px; height: 6px; background: #cbd5e1; margin: 0 auto 4px; }
+                    .tick.major .tick-mark { height: 10px; background: #94a3b8; width: 2px; }
+                    .tick.highlight .tick-mark { background: var(--primary); }
+                    .tick.highlight span { color: var(--primary); font-weight: 700; }
+
+                    /* Specific alignments */
+                    .tick[data-val="0"] { left: 0%; transform: translateX(0); text-align: left; }
+                    .tick[data-val="0"] .tick-mark { margin-left: 1px; }
+                    .tick[data-val="1"] { left: 100%; transform: translateX(-100%); text-align: right; }
+                    .tick[data-val="1"] .tick-mark { margin-right: 1px; margin-left: auto; }
+
+                    .tick-desc { font-size: 10px; color: #94a3b8; display: block; margin-top: -2px; white-space: nowrap; }
+
+                    /* Global Actions & Stats */
+                    .actions-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+
+                    .summary-stats { display: flex; gap: 20px; align-items: center; }
+                    .summary-item { display: flex; flex-direction: column; }
+                    .summary-label { font-size: 11px; color: var(--slate-500); text-transform: uppercase; letter-spacing: 0.5px; }
+                    .summary-value { font-size: 18px; font-weight: 700; color: var(--slate-800); }
+                    .summary-value.highlight { color: var(--orange); }
+
+                    .btn-group { display: flex; gap: 10px; }
+                    .action-btn { background: white; border: 1px solid var(--slate-200); color: var(--slate-500); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+                    .action-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--slate-50); }
 
                     /* Cards */
                     .card { background: white; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 20px; overflow: hidden; border: 1px solid var(--slate-200); }
@@ -355,8 +388,8 @@
                     td { padding: 12px 16px; border-bottom: 1px solid var(--slate-100); color: var(--slate-800); vertical-align: middle; }
                     tr:last-child td { border-bottom: none; }
 
-                    /* Visual Aids & Highlighting */
-                    tr.best-value { background-color: #eff6ff; /* indigo-50 */ position: relative; }
+                    /* Visual Aids */
+                    tr.best-value { background-color: #eff6ff; position: relative; }
                     tr.best-value td:first-child { border-left: 3px solid var(--primary); }
 
                     .badge { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; line-height: 1; border: 1px solid transparent; }
@@ -373,8 +406,13 @@
                     .channel-sub { font-size: 11px; color: var(--slate-500); }
                     .best-value .channel-name { color: #312e81; }
                     .best-value .channel-sub { color: #6366f1; }
-
                     .empty-msg { text-align: center; padding: 30px; color: var(--slate-500); font-style: italic; }
+
+                    /* Toggle Footer */
+                    .card-footer { text-align: center; padding: 8px; background: #fdfdfd; border-top: 1px solid #f1f5f9; cursor: pointer; transition: background 0.2s; }
+                    .card-footer:hover { background: #f8fafc; }
+                    .toggle-link { color: var(--slate-500); font-size: 12px; font-weight: 600; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 4px; }
+                    .toggle-link:hover { color: var(--primary); }
                 </style>
             </head>
             <body>
@@ -406,12 +444,56 @@
                                 ¥<span id="coef-display">0.20</span><span>/天</span>
                             </div>
                         </div>
-                        <input type="range" id="coef-slider" min="0" max="1" step="0.05" value="0.2">
-                        <div class="range-labels">
-                            <span>0 (只看价格)</span>
-                            <span style="color:var(--primary); font-weight:bold">0.2 (推荐平衡点)</span>
-                            <span>0.5 (急货)</span>
-                            <span>1.0 (不计成本)</span>
+
+                        <div class="slider-container">
+                            <input type="range" id="coef-slider" min="0" max="1" step="0.05" value="0.2" list="tick-list">
+                            <datalist id="tick-list">
+                                <option value="0"></option>
+                                <option value="0.2"></option>
+                                <option value="0.5"></option>
+                                <option value="1.0"></option>
+                            </datalist>
+
+                            <div class="ruler">
+                                <div class="tick" data-val="0">
+                                    <div class="tick-mark"></div>
+                                    <span>0</span>
+                                    <span class="tick-desc">只看价格</span>
+                                </div>
+                                <div class="tick major highlight" data-val="0.2" style="left: 20%">
+                                    <div class="tick-mark"></div>
+                                    <span>0.2</span>
+                                    <span class="tick-desc">推荐平衡点</span>
+                                </div>
+                                <div class="tick major" data-val="0.5" style="left: 50%">
+                                    <div class="tick-mark"></div>
+                                    <span>0.5</span>
+                                    <span class="tick-desc">急货</span>
+                                </div>
+                                <div class="tick" data-val="1" style="left: 100%">
+                                    <div class="tick-mark"></div>
+                                    <span>1.0</span>
+                                    <span class="tick-desc">不计成本</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Global Actions & Summary -->
+                    <div class="actions-bar">
+                        <div class="summary-stats">
+                            <div class="summary-item">
+                                <span class="summary-label">方案总成本 (含配置费)</span>
+                                <span class="summary-value" id="total-cost-display">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">最快入仓时效</span>
+                                <span class="summary-value highlight" id="fastest-time-display">--</span>
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="action-btn" onclick="expandAll()">📂 全部展开</button>
+                            <button class="action-btn" onclick="collapseAll()">📁 全部折叠</button>
                         </div>
                     </div>
 
@@ -420,31 +502,36 @@
                 </div>
 
                 <script>
-                    // 1. 获取注入的数据
                     const SHIPMENTS = JSON.parse('${jsonString}');
+                    const AMAZON_FEE = ${amazonFee}; // 注入配置费
 
-                    // 2. DOM 元素
                     const container = document.getElementById('shipments-container');
                     const slider = document.getElementById('coef-slider');
                     const display = document.getElementById('coef-display');
+                    const totalCostDisplay = document.getElementById('total-cost-display');
+                    const fastestTimeDisplay = document.getElementById('fastest-time-display');
 
-                    // 3. 核心渲染逻辑
-                    function render(coefficient) {
-                        display.innerText = coefficient.toFixed(2);
-                        container.innerHTML = ''; // 清空
+                    // 状态管理
+                    let currentCoef = 0.2;
+                    let expandedState = new Array(SHIPMENTS.length).fill(false); // 默认全部折叠
 
-                        SHIPMENTS.forEach(ship => {
-                            // 计算分数并排序
+                    function render() {
+                        display.innerText = currentCoef.toFixed(2);
+                        container.innerHTML = '';
+
+                        let grandTotalFreight = 0;
+                        let minGlobalDays = 999;
+
+                        SHIPMENTS.forEach((ship, index) => {
                             let processedChannels = [];
 
                             if (ship.channels && ship.channels.length > 0) {
-                                // 找出极值用于打标
                                 const minPrice = Math.min(...ship.channels.map(c => c.price));
                                 const minDays = Math.min(...ship.channels.map(c => c.avgTime === 999 ? 9999 : c.avgTime));
 
                                 processedChannels = ship.channels.map(c => {
-                                    const daysVal = c.avgTime === 999 ? 100 : c.avgTime; // 无时效按100天算分
-                                    const score = c.price + (daysVal * coefficient);
+                                    const daysVal = c.avgTime === 999 ? 100 : c.avgTime;
+                                    const score = c.price + (daysVal * currentCoef);
                                     return {
                                         ...c,
                                         score: score,
@@ -453,29 +540,45 @@
                                     };
                                 });
 
-                                // 排序：分数越低越好
+                                // 排序
                                 processedChannels.sort((a, b) => {
                                     const diff = a.score - b.score;
                                     return Math.abs(diff) < 0.01 ? a.price - b.price : diff;
                                 });
+
+                                // --- 统计逻辑 ---
+                                // 取排名第一（推荐）的渠道进行统计
+                                if (processedChannels.length > 0) {
+                                    const best = processedChannels[0];
+                                    grandTotalFreight += (best.price * ship.weight);
+
+                                    // 寻找所有推荐渠道中最快的那个时间
+                                    if (best.avgTime !== 999 && best.avgTime < minGlobalDays) {
+                                        minGlobalDays = best.avgTime;
+                                    }
+                                }
                             }
+
+                            // 决定显示多少行
+                            const isExpanded = expandedState[index];
+                            const totalCount = processedChannels.length;
+                            const showCount = isExpanded ? totalCount : 1;
+                            const visibleChannels = processedChannels.slice(0, showCount);
 
                             // 生成表格 HTML
                             let rowsHtml = '';
                             if (processedChannels.length === 0) {
                                 rowsHtml = '<tr><td colspan="5" class="empty-msg">⚠️ 该仓库无匹配报价</td></tr>';
                             } else {
-                                rowsHtml = processedChannels.map((c, idx) => {
+                                rowsHtml = visibleChannels.map((c, idx) => {
                                     const isBest = idx === 0;
                                     const totalCost = (ship.weight * c.price).toFixed(2);
 
-                                    // 徽章 HTML
                                     let badges = '';
                                     if (isBest) badges += '<span class="badge badge-best">综合推荐</span>';
                                     if (c.isCheapest) badges += '<span class="badge badge-cheap">最省</span>';
                                     if (c.isFastest) badges += '<span class="badge badge-fast">最快</span>';
 
-                                    // 样式类
                                     const rowClass = isBest ? 'best-value' : '';
                                     const priceClass = c.isCheapest ? 'val-cheap' : '';
                                     const timeClass = c.isFastest ? 'val-fast' : '';
@@ -502,7 +605,17 @@
                                 }).join('');
                             }
 
-                            // 组装卡片
+                            // 底部折叠按钮
+                            let footerHtml = '';
+                            if (totalCount > 1) {
+                                const btnText = isExpanded ? '⬆️ 收起' : \`⬇️ 查看更多 (\${totalCount - 1} 个渠道)\`;
+                                footerHtml = \`
+                                    <div class="card-footer" onclick="toggleCard(\${index})">
+                                        <span class="toggle-link">\${btnText}</span>
+                                    </div>
+                                \`;
+                            }
+
                             const cardHtml = \`
                                 <div class="card">
                                     <div class="card-head">
@@ -527,19 +640,62 @@
                                         </thead>
                                         <tbody>\${rowsHtml}</tbody>
                                     </table>
+                                    \${footerHtml}
                                 </div>
                             \`;
                             container.insertAdjacentHTML('beforeend', cardHtml);
                         });
+
+                        // --- 更新顶部统计 ---
+                        // 汇率假设：如果配置费是美元，这里直接相加可能不严谨。
+                        // 但通常ERP显示的是预估总费用。这里简单处理：假设配置费已经换算或者用户只看数值。
+                        // 如果需要汇率转换，需要额外逻辑。这里暂且直接相加 (假设用户自行换算或单位一致，通常ERP里配置费是美元，运费是人民币，这里显示 ¥ 符号可能需要注意)
+                        // 修改：显示时保留两位小数
+
+                        // 注意：AMAZON_FEE 通常是美元。运费通常是人民币。
+                        // 为了严谨，这里显示格式为 "¥运费 + $配置费" 或者直接显示数值。
+                        // 鉴于用户需求是"总费用"，这里做个简单的显示优化：
+
+                        const totalRMB = grandTotalFreight;
+                        const totalUSD = AMAZON_FEE;
+
+                        let costText = "";
+                        if (totalUSD > 0) {
+                           // 混合显示，避免汇率误导
+                           costText = \`¥\${totalRMB.toFixed(0)} + $\${totalUSD.toFixed(0)}\`;
+                        } else {
+                           costText = \`¥\${totalRMB.toFixed(2)}\`;
+                        }
+
+                        totalCostDisplay.innerText = costText;
+                        fastestTimeDisplay.innerHTML = minGlobalDays === 999 ? '-' : \`\${minGlobalDays} <span style="font-size:12px;font-weight:400;color:#64748b">天</span>\`;
                     }
 
-                    // 4. 事件监听
+                    // 交互函数
+                    window.toggleCard = function(index) {
+                        expandedState[index] = !expandedState[index];
+                        render();
+                    };
+
+                    window.expandAll = function() {
+                        expandedState.fill(true);
+                        render();
+                    };
+
+                    window.collapseAll = function() {
+                        expandedState.fill(false);
+                        render();
+                    };
+
                     slider.addEventListener('input', (e) => {
-                        render(parseFloat(e.target.value));
+                        currentCoef = parseFloat(e.target.value);
+                        // 拖动滑块时，重置为折叠状态，因为排名变了，之前的展开可能没意义
+                        expandedState.fill(false);
+                        render();
                     });
 
-                    // 5. 初始渲染 (默认 0.2)
-                    render(0.2);
+                    // 初始渲染
+                    render();
 
                 </script>
             </body>
