@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlentiVive™ Professional Manual</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; line-height: 1.6; }
+        .page { background: white; width: 210mm; min-height: 297mm; padding: 20mm; margin: 20px auto; box-shadow: 0 10px 25px rgba(0,0,0,0.05); position: relative; }
+        .tag-orange { background-color: #f97316; color: white; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
+        
+        #upload-container {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+            min-height: 420px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 20px;
+            background: #f8fafc;
+            overflow: hidden;
+            position: relative;
+        }
+        #upload-container:hover { border-color: #f97316; background: #ffffff; }
+        #preview-img { width: 100%; height: auto; display: none; object-fit: contain; }
+        .upload-placeholder { text-align: center; }
+        
+        @media print {
+            body { background: none; margin: 0; padding: 0; }
+            .page { margin: 0; box-shadow: none; width: 100%; page-break-after: always; }
+            .no-print { display: none; }
+            #upload-container { border: none; background: none; }
+        }
+    </style>
+</head>
+<body class="py-10">
+
+    <!-- PAGE 1: COVER -->
+    <div class="page flex flex-col justify-between items-center text-center">
+        <div class="mt-12">
+            <h1 class="text-5xl font-extrabold text-slate-900 tracking-tighter italic">PlentiVive™</h1>
+            <div class="w-24 h-1.5 bg-orange-500 mx-auto mt-5 rounded-full"></div>
+            <h2 class="text-xl mt-10 font-bold text-slate-600 tracking-[0.2em] uppercase">Professional User Guide</h2>
+            <p class="text-orange-600 mt-3 font-semibold text-lg uppercase tracking-tight">Washable Fabric & Child-Safe Hidden Locks</p>
+        </div>
+
+        <div class="w-full px-6">
+            <div id="upload-container" onclick="document.getElementById('imageInput').click()">
+                <div class="upload-placeholder p-12" id="placeholder">
+                    <svg class="w-12 h-12 mx-auto text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                    <p class="text-slate-500 font-semibold text-base">Click to Upload Skeleton Logic Diagram</p>
+                    <p class="text-slate-400 text-sm mt-2 font-medium italic">(Select your A+ Logic Image)</p>
+                </div>
+                <img id="preview-img" alt="Internal Skeleton View" />
+                <input type="file" id="imageInput" class="hidden" accept="image/*" onchange="handleImageUpload(this)">
+            </div>
+        </div>
+
+        <div class="w-full flex justify-between items-end border-t border-slate-100 pt-8 text-slate-400 px-6">
+            <div class="text-left text-xs uppercase font-bold tracking-widest">
+                <p>Designed for Safety</p>
+                <p class="mt-1 font-normal opacity-60">Version 1.9</p>
+            </div>
+            <div class="text-right">
+                <p class="font-black text-lg italic text-slate-300 uppercase">PlentiVive™</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE 2: OPERATION LOGIC -->
+    <div class="page">
+        <div class="flex items-center space-x-4 mb-10 border-b-4 border-orange-500 pb-3">
+            <h2 class="text-2xl font-extrabold text-slate-800 tracking-tight uppercase">Quick Operation Guide</h2>
+        </div>
+
+        <div class="grid grid-cols-2 gap-12">
+            <!-- Left: Folding -->
+            <div class="space-y-8">
+                <div class="flex items-center space-x-3">
+                    <span class="tag-orange">01. Unfold & Fold</span>
+                </div>
+                
+                <div class="space-y-6">
+                    <div class="bg-slate-50 p-5 rounded-2xl border-l-4 border-orange-500 shadow-sm">
+                        <h4 class="font-bold text-slate-900 text-base">Unfold:</h4>
+                        <p class="text-sm text-slate-600 mt-2 font-medium">Open directly. Auto-locks when fully open. <span class="text-orange-600 font-bold">No buttons required.</span></p>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-5 rounded-2xl border-l-4 border-orange-500 shadow-sm">
+                        <h4 class="font-bold text-slate-900 text-base">Fold:</h4>
+                        <p class="text-sm text-slate-600 mt-2 font-medium">Locate hidden <b>Buttons [1]</b> under the fabric. <b>Press both simultaneously</b> to unlock and fold.</p>
+                    </div>
+                    
+                    <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                        <p class="text-xs text-blue-800 font-semibold leading-relaxed">
+                            <span class="text-blue-600 uppercase font-black text-[10px] block mb-1 tracking-widest">Safety System</span>
+                            Buttons are intentionally hidden under the fabric to prevent child tampering. Feel for the joint structure through the cover to operate.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Height -->
+            <div class="space-y-8">
+                <div class="flex items-center space-x-3">
+                    <span class="tag-orange">02. Height Adjustment</span>
+                </div>
+                
+                <div class="space-y-6">
+                    <div class="bg-slate-50 p-5 rounded-2xl border-l-4 border-orange-500 shadow-sm">
+                        <h4 class="font-bold text-slate-900 text-base">Unlock:</h4>
+                        <p class="text-sm text-slate-600 mt-2 font-medium">Feel for <b>Slider [2]</b> under the fabric. <b>Slide & HOLD</b> inward.</p>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-5 rounded-2xl border-l-4 border-orange-500 shadow-sm">
+                        <h4 class="font-bold text-slate-900 text-base">Adjust:</h4>
+                        <p class="text-sm text-slate-600 mt-2 font-medium">While holding [2], adjust or remove tubes. <span class="text-orange-600 font-bold">Release to lock.</span></p>
+                    </div>
+
+                    <div class="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                        <p class="text-xs text-amber-800 font-semibold leading-relaxed">
+                            <span class="text-amber-600 uppercase font-black text-[10px] block mb-1 tracking-widest">Mechanism Note</span>
+                            This is a <span class="underline">sliding switch</span>, not a push button. Maintain inward pressure while adjusting height.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-16 p-8 bg-slate-900 rounded-[2rem] text-white flex items-center justify-between shadow-lg">
+            <div class="w-3/4">
+                <h3 class="text-xl font-bold italic mb-3 text-orange-400 underline underline-offset-8 decoration-2">Child-Safe Hidden Design</h3>
+                <p class="text-xs text-slate-400 leading-relaxed font-medium">
+                    By concealing mechanical parts under the premium washable cover, we minimize the risk of inquisitive toddlers unlocking the rail. Safety is our ultimate design priority.
+                </p>
+            </div>
+            <div class="w-1/4 flex justify-end pr-4">
+                <svg class="w-12 h-12 text-orange-500 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE 3: LIGHT & MAINTENANCE -->
+    <div class="page">
+        <div class="flex items-center space-x-4 mb-10 border-b-2 border-slate-100 pb-5">
+            <h2 class="text-xl font-bold text-slate-800 tracking-tight uppercase">Smart Sensor Light Guide</h2>
+        </div>
+
+        <div class="bg-slate-50 rounded-[2rem] p-8 border border-slate-200 mb-10">
+            <div class="grid grid-cols-2 gap-12">
+                <div>
+                    <h3 class="text-xs font-black uppercase text-orange-600 mb-4 tracking-widest">Operation Modes</h3>
+                    <div class="space-y-4 text-sm text-slate-700 font-medium">
+                        <p><span class="w-6 h-6 inline-flex items-center justify-center bg-blue-100 text-blue-700 rounded-full text-xs mr-2">1</span> <b>Always-On Mode</b> (1st Press)</p>
+                        <p><span class="w-6 h-6 inline-flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full text-xs mr-2">2</span> <b>Night Sensor</b> (2nd Press - Flash x3)</p>
+                        <p><span class="w-6 h-6 inline-flex items-center justify-center bg-green-100 text-green-700 rounded-full text-xs mr-2">3</span> <b>All-Day Sensor</b> (3rd Press - Flash x2)</p>
+                    </div>
+                    <div class="mt-6 p-4 bg-white rounded-xl border border-slate-200 text-xs text-slate-500 leading-relaxed italic">
+                        <b>Dimming:</b> To adjust brightness, press and <b>HOLD</b> the button while the light is ON.
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-black uppercase text-orange-600 mb-4 tracking-widest">Technical & Charging</h3>
+                    <ul class="text-xs space-y-3 text-slate-600 font-medium list-none pl-1">
+                        <li class="flex items-center"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full mr-3"></span> DC 5V Input (Use standard 5V chargers).</li>
+                        <li class="flex items-center"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full mr-3"></span> Red Light: Charging / Light Off: Full.</li>
+                        <li class="flex items-center"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full mr-3"></span> Detection Range: 120° Wide Angle, 3m.</li>
+                        <li class="flex items-center"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full mr-3"></span> Do not use while charging.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-12">
+            <div class="space-y-4">
+                <h4 class="font-bold text-slate-800 text-base border-l-4 border-orange-500 pl-3 uppercase tracking-tight">Light Placement</h4>
+                <div class="text-sm text-slate-600 space-y-4 font-medium">
+                    <p>1. Locate the dedicated mesh pocket on the fabric cover.</p>
+                    <p class="text-slate-800 font-bold bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        2. Simply insert the light unit into the pocket. It is now ready to detect motion and light your way.
+                    </p>
+                </div>
+            </div>
+            <div class="space-y-4">
+                <h4 class="font-bold text-slate-800 text-base border-l-4 border-orange-500 pl-3 uppercase tracking-tight">Fabric Wash</h4>
+                <div class="text-sm text-slate-600 space-y-3 font-medium">
+                    <p>1. Unzip and slide the mesh cover off the frame.</p>
+                    <p>2. Machine wash cold (Max 60°C / 140°F).</p>
+                    <p>3. Air dry only. Re-install once fully dry.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-20 text-center border-t border-slate-100 pt-8">
+            <p class="text-xs font-bold text-slate-300 uppercase tracking-[0.4em]">Premium Baby Safety Systems • PlentiVive™ Official Manual</p>
+        </div>
+    </div>
+
+    <script>
+        function handleImageUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById('preview-img');
+                    const placeholder = document.getElementById('placeholder');
+                    const container = document.getElementById('upload-container');
+                    
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                    placeholder.style.display = 'none';
+                    container.style.borderStyle = 'none';
+                    container.style.background = 'white';
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+    </script>
+
+</body>
+</html>

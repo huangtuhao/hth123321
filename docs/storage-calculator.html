@@ -417,6 +417,20 @@
                 </div>
                 <button onclick="addShipmentEntry()">添加出货计划</button>
             </div>
+            <div class="batch-modify-group" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border: 1px dashed #ccc;">
+            <div class="hint">批量修改现有计划：</div>
+                <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                    <select id="batchModifyAction" style="flex: 1;">
+                        <option value="set">统一改为</option>
+                        <option value="add">固定增加</option>
+                        <option value="sub">固定减少</option>
+                        <option value="inc_pct">比例增加(%)</option>
+                        <option value="dec_pct">比例减少(%)</option>
+                    </select>
+                    <input type="number" id="batchModifyValue" placeholder="数值" style="flex: 1; margin-bottom: 0;">
+                </div>
+                <button onclick="applyBatchModify()" style="width: 100%; background-color: #2196F3;">立即应用到所有月份</button>
+            </div>
         </div>
 
         <div class="result-section">
@@ -784,36 +798,6 @@ ${analyzeDistribution(itemTotalCosts)}
             }
         }
 
-        // 保存计算历史到本地存储
-        function saveToHistory(input, output) {
-            const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
-            const sizeInFt3 = input.size;
-            
-            const record = {
-                timestamp: new Date().toISOString(),
-                input: {
-                    ...input,
-                    size: sizeInFt3,
-                    unit: 'ft3',  // 统一保存为立方英尺
-                },
-                output: {
-                    ...output,
-                    removalResults: document.getElementById('removalResults').innerHTML  // 保存移除分析结果
-                },
-                summary: {
-                    size: sizeInFt3.toFixed(2),
-                    totalQty: input.totalQty,
-                    totalCost: output.totalCost.toFixed(2),
-                    months: Object.keys(output.monthlyStats).length,
-                }
-            };
-            
-            history.unshift(record);
-            if (history.length > 50) history.pop();
-            localStorage.setItem('calculationHistory', JSON.stringify(history));
-            updateHistoryList();
-        }
-
         // 更新历史记录列表显示
         function updateHistoryList() {
             const history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
@@ -824,14 +808,16 @@ ${analyzeDistribution(itemTotalCosts)}
                 const item = document.createElement('div');
                 item.className = 'history-item';
                 
+                // --- 在 summary div 中增加月销量显示 ---
                 item.innerHTML = `
                     <div class="content">
                         <div class="timestamp">${new Date(record.timestamp).toLocaleString()}</div>
                         <div class="summary">
                             尺寸: ${record.summary.size} ft³ | 
                             数量: ${record.summary.totalQty}件 | 
-                            总费用: $${record.summary.totalCost} | 
-                            计算月数: ${record.summary.months}个月
+                            月销: ${record.summary.monthlySales}件 | 
+                            总费: $${record.summary.totalCost} | 
+                            周期: ${record.summary.months}月
                         </div>
                     </div>
                     <button class="delete-history" onclick="event.stopPropagation(); deleteHistoryItem(${index})">×</button>
@@ -1176,6 +1162,97 @@ ${analyzeDistribution(itemTotalCosts)}
             }
             
             container.innerHTML = html;
+        }
+
+        // 批量修改现有出货项
+        function applyBatchModify() {
+            const action = document.getElementById('batchModifyAction').value;
+            const val = parseFloat(document.getElementById('batchModifyValue').value);
+            if (isNaN(val)) return;
+
+            const entries = document.querySelectorAll('#shipmentEntries .shipment-entry');
+            entries.forEach(entry => {
+                const input = entry.querySelector('input[type="number"]');
+                let current = parseFloat(input.value) || 0;
+                
+                switch(action) {
+                    case 'set': current = val; break;
+                    case 'add': current += val; break;
+                    case 'sub': current -= val; break;
+                    case 'inc_pct': current *= (1 + val / 100); break;
+                    case 'dec_pct': current *= (1 - val / 100); break;
+                }
+                input.value = Math.max(0, Math.round(current)); // 自动取整且不小于0
+            });
+        }
+
+        // 简单的哈希函数，用于快速比较输入内容
+        function generateInputHash(input) {
+            // 只挑选影响计算结果的核心字段
+            const keyData = {
+                size: input.size,
+                unit: input.unit,
+                inventory: input.ltcQty.map(i => `${i.key}:${i.val}`),
+                shipments: input.clearanceData.map(s => `${s.key}:${s.val}`)
+            };
+            return btoa(JSON.stringify(keyData)); // 使用 Base64 作为简易哈希值
+        }
+
+        function saveToHistory(input, output) {
+            let history = JSON.parse(localStorage.getItem('calculationHistory') || '[]');
+            const currentHash = generateInputHash(input);
+
+            // --- 修改点：在整个历史列表中查找是否存在相同的哈希值 ---
+            const existingIndex = history.findIndex(record => record.inputHash === currentHash);
+
+            if (existingIndex !== -1) {
+                // 如果找到了完全一样的记录：
+                // 方案 A：直接返回，什么都不做（满足你说的“不要重复加入”）
+                // return; 
+
+                // 方案 B：先删掉旧的，再通过下面的逻辑加到最前面（实现“已存在记录置顶”，更符合使用习惯）
+                history.splice(existingIndex, 1);
+            }
+
+            // 计算月销量众数
+            const shipmentValues = input.clearanceData.map(s => s.val);
+            const primaryMonthlySales = getMode(shipmentValues);
+
+            const record = {
+                timestamp: new Date().toISOString(),
+                inputHash: currentHash,
+                input: JSON.parse(JSON.stringify(input)),
+                output: { totalCost: output.totalCost, monthlyStats: output.monthlyStats },
+                summary: {
+                    size: input.size.toFixed(2),
+                    totalQty: input.totalQty,
+                    totalCost: output.totalCost.toFixed(2),
+                    months: Object.keys(output.monthlyStats).length,
+                    monthlySales: primaryMonthlySales
+                }
+            };
+            
+            history.unshift(record); // 插入到最前面
+            if (history.length > 50) history.pop();
+            localStorage.setItem('calculationHistory', JSON.stringify(history));
+            updateHistoryList();
+        }
+
+        // 计算数组中的众数（出现频率最高的数值）
+        function getMode(arr) {
+            if (arr.length === 0) return 0;
+            const modeMap = {};
+            let maxEl = arr[0], maxCount = 1;
+            for (let i = 0; i < arr.length; i++) {
+                const el = arr[i];
+                if (modeMap[el] == null) modeMap[el] = 1;
+                else modeMap[el]++;
+                if (modeMap[el] > maxCount) {
+                    maxEl = el;
+                    maxCount = modeMap[el];
+                }
+            }
+            return maxEl;
         }
     </script>
 </body>

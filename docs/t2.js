@@ -72,7 +72,7 @@ function calculateDailyCost(size, date, age) {
 }
 
 /**
- * 计算总仓储费用（按天计算版本）
+ * 计算总仓储费用（修复了 Math.ceil 导致的月销量不敏感 Bug）
  */
 function calculateTotalCost2_v2(product) {
     let inventoryArray = initializeInventoryArray(product);
@@ -80,116 +80,89 @@ function calculateTotalCost2_v2(product) {
     const costRecords = Array(initialInventory).fill().map(() => []);
     const initialAges = [...inventoryArray];
     
-    // 验证总出货量是否超过初始库存
     const totalShipments = product.clearanceData.reduce((sum, shipment) => sum + shipment.val, 0);
-    if (totalShipments > initialInventory) {
-        alert(`警告：出货计划总量(${totalShipments}件)超过初始库存(${initialInventory}件)，将按实际库存计算`);
-    }
-    
     const shipments = product.clearanceData.sort((a, b) => parseInt(a.key) - parseInt(b.key));
     const startDate = shipments[0].key;
     const endDate = shipments[shipments.length - 1].key;
     const dates = generateDateRange(startDate, endDate);
     
     const monthlyStats = {};
-    
-    // 记录每个商品的出货日期
     const shippedDates = Array(initialInventory).fill(null);
-    
-    // 按天计算
+
+    // 修复 Bug 的核心变量：记录每个月已处理的出货累计
+    let monthlyCumulativeShipped = 0;
+    let lastMonthStr = "";
+
     dates.forEach(date => {
-        const month = date.slice(0, 6);
-        if (!monthlyStats[month]) {
-            monthlyStats[month] = {
+        const currentMonthStr = date.slice(0, 6);
+        if (currentMonthStr !== lastMonthStr) {
+            monthlyCumulativeShipped = 0; // 跨月重置
+            lastMonthStr = currentMonthStr;
+        }
+
+        if (!monthlyStats[currentMonthStr]) {
+            monthlyStats[currentMonthStr] = {
                 monthlyStorageCost: 0,
                 longTermStorageCost: 0,
-                inventoryByAge: {
-                    '0-90': 0,
-                    '91-180': 0,
-                    '181-270': 0,
-                    '271-365': 0,
-                    '365+': 0
-                }
+                inventoryByAge: { '0-90': 0, '91-180': 0, '181-270': 0, '271-365': 0, '365+': 0 }
             };
         }
 
-        const shipment = shipments.find(s => s.key === date.slice(0, 6));
-        let dailyShipment = shipment ? Math.ceil(shipment.val / DAYS_IN_MONTH) : 0;
+        const shipment = shipments.find(s => s.key === currentMonthStr);
+        let dailyShipment = 0;
 
-        // 检查当天的出货量是否超过剩余库存
-        if (dailyShipment > inventoryArray.length) {
-            dailyShipment = inventoryArray.length;
-        }
-
-        // 处理出货
-        if (dailyShipment > 0 && inventoryArray.length > 0) {
-            // 记录出货日期
-            for (let i = 0; i < dailyShipment; i++) {
-                const index = initialInventory - inventoryArray.length + i;
-                shippedDates[index] = date;
-            }
-            // 更新剩余库存
-            inventoryArray = inventoryArray.slice(0, -dailyShipment);
-        }
-
-        // 计算所有商品的费用（包括已出货的）
-        for (let i = 0; i < initialInventory; i++) {
-            // 如果商品已经出货，且出货日期在当前日期之前，则跳过
-            if (shippedDates[i] && shippedDates[i] < date) continue;
+        if (shipment) {
+            const dayOfMonth = parseInt(date.slice(6, 8));
+            // 采用比例计算法：计算到今天为止本月应出货总量
+            const targetShippedByToday = Math.floor((shipment.val * dayOfMonth) / 30);
+            dailyShipment = targetShippedByToday - monthlyCumulativeShipped;
             
-            // 使用初始库龄加上已经过去的天数
+            // 月末最后一天补齐差额，确保月总销量准确
+            const nextDay = new Date(parseInt(date.slice(0,4)), parseInt(date.slice(4,6))-1, dayOfMonth + 1);
+            if (nextDay.getDate() === 1) {
+                dailyShipment = Math.max(dailyShipment, shipment.val - monthlyCumulativeShipped);
+            }
+            dailyShipment = Math.max(0, dailyShipment);
+        }
+
+        // 执行扣减
+        const actualDailyShipment = Math.min(dailyShipment, initialInventory - shippedDates.filter(d => d !== null).length);
+        if (actualDailyShipment > 0) {
+            for (let i = 0; i < actualDailyShipment; i++) {
+                const firstAvailableIndex = shippedDates.indexOf(null);
+                if (firstAvailableIndex !== -1) shippedDates[firstAvailableIndex] = date;
+            }
+            monthlyCumulativeShipped += actualDailyShipment;
+        }
+
+        // 计算费用
+        for (let i = 0; i < initialInventory; i++) {
+            if (shippedDates[i] && shippedDates[i] < date) continue;
             const age = initialAges[i] + costRecords[i].length;
             const { monthlyCost, longTermCost } = calculateDailyCostDetailed(product.size, date, age);
             costRecords[i].push(monthlyCost + longTermCost);
-            
-            monthlyStats[month].monthlyStorageCost += monthlyCost;
-            monthlyStats[month].longTermStorageCost += longTermCost;
+            monthlyStats[currentMonthStr].monthlyStorageCost += monthlyCost;
+            monthlyStats[currentMonthStr].longTermStorageCost += longTermCost;
         }
 
-        // 在月末统计库存分布
-        const nextDay = new Date(
-            parseInt(date.slice(0, 4)),
-            parseInt(date.slice(4, 6)) - 1,
-            parseInt(date.slice(6, 8)) + 1
-        );
-        
-        if (nextDay.getDate() === 1 || date === dates[dates.length - 1]) {
-            // 清空之前的统计
-            Object.keys(monthlyStats[month].inventoryByAge).forEach(key => {
-                monthlyStats[month].inventoryByAge[key] = 0;
-            });
-            
-            // 统计当前库存的分布情况
+        // 月末分布统计... (保持原样)
+        const day = parseInt(date.slice(6, 8));
+        const nextDayCheck = new Date(parseInt(date.slice(0,4)), parseInt(date.slice(4,6))-1, day + 1);
+        if (nextDayCheck.getDate() === 1 || date === dates[dates.length - 1]) {
+            Object.keys(monthlyStats[currentMonthStr].inventoryByAge).forEach(k => monthlyStats[currentMonthStr].inventoryByAge[k] = 0);
             for (let i = 0; i < initialInventory; i++) {
-                // 只统计未出货的商品
                 if (shippedDates[i] && shippedDates[i] <= date) continue;
-                
                 const age = initialAges[i] + costRecords[i].length;
-                if (age <= 90) monthlyStats[month].inventoryByAge['0-90']++;
-                else if (age <= 180) monthlyStats[month].inventoryByAge['91-180']++;
-                else if (age <= 270) monthlyStats[month].inventoryByAge['181-270']++;
-                else if (age <= 365) monthlyStats[month].inventoryByAge['271-365']++;
-                else monthlyStats[month].inventoryByAge['365+']++;
+                if (age <= 90) monthlyStats[currentMonthStr].inventoryByAge['0-90']++;
+                else if (age <= 180) monthlyStats[currentMonthStr].inventoryByAge['91-180']++;
+                else if (age <= 270) monthlyStats[currentMonthStr].inventoryByAge['181-270']++;
+                else if (age <= 365) monthlyStats[currentMonthStr].inventoryByAge['271-365']++;
+                else monthlyStats[currentMonthStr].inventoryByAge['365+']++;
             }
         }
-
-        // 增加库龄
-        inventoryArray = inventoryArray.map(age => age + 1);
     });
 
-    // 添加库存统计信息
-    const stats = {
-        initialInventory,
-        totalShipments,
-        remainingInventory: inventoryArray.length,
-        insufficientInventory: totalShipments > initialInventory
-    };
-
-    return {
-        costRecords,
-        monthlyStats,
-        stats
-    };
+    return { costRecords, monthlyStats, stats: { initialInventory, totalShipments, remainingInventory: initialInventory - shippedDates.filter(d => d !== null).length, insufficientInventory: totalShipments > initialInventory } };
 }
 
 /**
