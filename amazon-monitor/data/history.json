@@ -1,0 +1,344 @@
+[
+  {
+    "id": 1776876124580.1868,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-22 16:42:04"
+  },
+  {
+    "id": 1776876130705.7222,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 16:42:10"
+  },
+  {
+    "id": 1776879633340.9873,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-22 17:40:33"
+  },
+  {
+    "id": 1776879639476.9832,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 17:40:39"
+  },
+  {
+    "id": 1776883232787.9744,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-22 18:40:32"
+  },
+  {
+    "id": 1776883238337.0522,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 18:40:38"
+  },
+  {
+    "id": 1776886832887.0898,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-22 19:40:32"
+  },
+  {
+    "id": 1776886837080.2815,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 19:40:37"
+  },
+  {
+    "id": 1776890432955.4556,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-22 20:40:32"
+  },
+  {
+    "id": 1776890439127.5417,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 20:40:39"
+  },
+  {
+    "id": 1776894031058.6362,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 21:40:31"
+  },
+  {
+    "id": 1776894036050.999,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 21:40:36"
+  },
+  {
+    "id": 1776897631059.88,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 22:40:31"
+  },
+  {
+    "id": 1776897633845.84,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 22:40:33"
+  },
+  {
+    "id": 1776901231079.8298,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 23:40:31"
+  },
+  {
+    "id": 1776901234810.9585,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-22 23:40:34"
+  },
+  {
+    "id": 1776904832947.4136,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 00:40:32"
+  },
+  {
+    "id": 1776904840079.6797,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 00:40:40"
+  },
+  {
+    "id": 1776908433035.5513,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 01:40:33"
+  },
+  {
+    "id": 1776908437843.8083,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 01:40:37"
+  },
+  {
+    "id": 1776912033040.4365,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 02:40:33"
+  },
+  {
+    "id": 1776912038398.538,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 02:40:38"
+  },
+  {
+    "id": 1776915632988.9343,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 03:40:32"
+  },
+  {
+    "id": 1776915638428.1133,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 03:40:38"
+  },
+  {
+    "id": 1776919234177.953,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 04:40:34"
+  },
+  {
+    "id": 1776919239879.7214,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 04:40:39"
+  },
+  {
+    "id": 1776922835497.1252,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 05:40:35"
+  },
+  {
+    "id": 1776922841820.0046,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 05:40:41"
+  },
+  {
+    "id": 1776926433472.6047,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 06:40:33"
+  },
+  {
+    "id": 1776926439733.3396,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 06:40:39"
+  },
+  {
+    "id": 1776930034129.4404,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 07:40:34"
+  },
+  {
+    "id": 1776930039389.9053,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 07:40:39"
+  },
+  {
+    "id": 1776933632003.6716,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 08:40:32"
+  },
+  {
+    "id": 1776933636158.8455,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 08:40:36"
+  },
+  {
+    "id": 1776937234475.466,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 09:40:34"
+  },
+  {
+    "id": 1776937239831.4333,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 09:40:39"
+  },
+  {
+    "id": 1776940833744.4983,
+    "asin": "B0FRGJT4TW",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 1,
+    "buybox_seller": "QCINDUX",
+    "checked_at": "2026-04-23 10:40:33"
+  },
+  {
+    "id": 1776940839294.6538,
+    "asin": "B0FVFLPTQK",
+    "price": null,
+    "is_available": 1,
+    "has_cart": 0,
+    "buybox_seller": "",
+    "checked_at": "2026-04-23 10:40:39"
+  }
+]

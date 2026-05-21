@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amazon 监控面板</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Toggle Switch */
+  .toggle-wrap { position: relative; display: inline-block; width: 42px; height: 23px; flex-shrink: 0; }
+  .toggle-wrap input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 23px; transition: .25s; }
+  .toggle-slider::before { content: ''; position: absolute; width: 17px; height: 17px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .25s; }
+  input:checked + .toggle-slider { background: #2563eb; }
+  input:checked + .toggle-slider::before { transform: translateX(19px); }
+  input:disabled + .toggle-slider { opacity: .5; cursor: not-allowed; }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
+
+<!-- Header -->
+<header class="bg-white shadow-sm sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-xl">📦</span>
+      <span class="font-bold text-gray-800 text-lg">Amazon 监控面板</span>
+      <div class="flex items-center gap-1.5">
+        <span id="runDot" class="w-2 h-2 rounded-full bg-gray-300 inline-block"></span>
+        <span id="runText" class="text-xs text-gray-400">初始化中</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <span id="lastCheckText" class="text-xs text-gray-400"></span>
+      <button id="checkBtn" onclick="doCheck()"
+        class="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">
+        🔍 立即检查
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Content -->
+<div class="max-w-7xl mx-auto px-6 py-5">
+
+  <!-- Tabs -->
+  <div class="flex gap-1 mb-5 bg-white rounded-lg p-1 w-fit shadow-sm border border-gray-100">
+    <button onclick="showTab('listings')" id="tab-listings"
+      class="text-sm font-medium px-4 py-1.5 rounded-md transition-all bg-blue-600 text-white">
+      📋 监控列表
+    </button>
+    <button onclick="showTab('alerts')" id="tab-alerts"
+      class="text-sm font-medium px-4 py-1.5 rounded-md transition-all text-gray-500 hover:bg-gray-50">
+      🚨 告警记录 <span id="alertBadge" class="hidden ml-1 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full"></span>
+    </button>
+    <button onclick="showTab('settings')" id="tab-settings"
+      class="text-sm font-medium px-4 py-1.5 rounded-md transition-all text-gray-500 hover:bg-gray-50">
+      ⚙️ 系统设置
+    </button>
+  </div>
+
+  <!-- Listings Panel -->
+  <div id="panel-listings">
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+      <div class="flex gap-3 items-end flex-wrap">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">添加监控 ASIN</label>
+          <input id="newAsin" type="text" maxlength="10" placeholder="B08XYZ1234"
+            class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-40 uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+            oninput="this.value=this.value.toUpperCase()"
+            onkeydown="if(event.key==='Enter')quickAdd()">
+        </div>
+        <button onclick="quickAdd()"
+          class="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          + 添加
+        </button>
+        <span class="text-xs text-gray-400 self-center">添加后点「配置」可设置店铺名和各项监控开关</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <span class="font-semibold text-gray-700">监控列表</span>
+        <span id="listingCountText" class="text-xs text-gray-400">加载中...</span>
+      </div>
+      <div id="listingsBody"></div>
+    </div>
+  </div>
+
+  <!-- Alerts Panel -->
+  <div id="panel-alerts" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <span class="font-semibold text-gray-700">告警记录</span>
+        <button onclick="doClearAlerts()" class="text-xs text-red-500 hover:text-red-700">清空全部</button>
+      </div>
+      <div id="alertsBody"></div>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div id="panel-settings" class="hidden">
+    <div class="space-y-4 max-w-2xl">
+
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-700 mb-4">📊 价格监控阈值</h3>
+        <div class="space-y-3">
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-sm text-gray-600 w-44">短期波动（与上次比）</label>
+            <input id="s-short" type="number" min="1" max="100"
+              class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="text-sm text-gray-400">%</span>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-sm text-gray-600 w-44">日均波动（与昨日均价比）</label>
+            <input id="s-daily" type="number" min="1" max="100"
+              class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="text-sm text-gray-400">%</span>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <label class="text-sm text-gray-600 w-44">检查间隔</label>
+            <input id="s-interval" type="number" min="10" max="1440"
+              class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="text-sm text-gray-400">分钟</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-gray-700">📧 QQ 邮件通知</h3>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="s-email-on" onchange="toggleSection('emailFields',this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div id="emailFields" class="space-y-3 opacity-40 pointer-events-none">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">发件邮箱</label>
+              <input id="s-email-user" type="text" placeholder="123456@qq.com"
+                class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">授权码</label>
+              <input id="s-email-pass" type="password" placeholder="QQ 邮箱授权码（非登录密码）"
+                class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">收件邮箱（多个用逗号分隔）</label>
+            <input id="s-email-to" type="text" placeholder="you@example.com"
+              class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <button onclick="doTestEmail()" class="text-xs text-blue-600 hover:text-blue-800 underline">发送测试邮件</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-gray-700">🚀 飞书机器人通知</h3>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="s-feishu-on" onchange="toggleSection('feishuFields',this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div id="feishuFields" class="opacity-40 pointer-events-none">
+          <label class="text-xs text-gray-500 mb-1 block">Webhook 地址</label>
+          <input id="s-feishu-webhook" type="text" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            class="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-gray-400 mt-2">飞书群 → 群设置 → 群机器人 → 添加自定义机器人 → 复制 Webhook</p>
+          <button onclick="doTestFeishu()" class="text-xs text-blue-600 hover:text-blue-800 underline mt-2 block">发送测试消息</button>
+        </div>
+      </div>
+
+      <button onclick="saveSettings()"
+        class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5 rounded-lg transition-colors">
+        保存设置
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ASIN Config Modal -->
+<div id="modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4"
+  onclick="if(event.target===this)closeModal()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-800">配置监控项</h3>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+    </div>
+    <div class="px-6 py-5 space-y-5">
+      <div>
+        <label class="text-xs font-medium text-gray-500 mb-1 block">ASIN</label>
+        <p id="m-asin" class="text-sm font-mono bg-gray-50 px-3 py-2 rounded-lg text-gray-700"></p>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-500 mb-1 block">
+          店铺名称 <span class="text-gray-400 font-normal">（Buy Box 判断依据，不填则不监控 Buy Box）</span>
+        </label>
+        <input id="m-seller" type="text" placeholder="填写你在 Amazon 的 Seller Name"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-500 mb-3 block">监控项开关</label>
+        <div id="m-toggles" class="space-y-3"></div>
+      </div>
+    </div>
+    <div class="flex gap-3 px-6 py-4 bg-gray-50 rounded-b-2xl">
+      <button onclick="closeModal()" class="flex-1 border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-lg hover:bg-gray-100 transition-colors">取消</button>
+      <button onclick="saveModal()" class="flex-1 bg-blue-600 text-white text-sm font-medium py-2 rounded-lg hover:bg-blue-700 transition-colors">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 right-6 z-50 transition-all duration-300 opacity-0 translate-y-2 pointer-events-none">
+  <div id="toastMsg" class="text-white text-sm px-4 py-3 rounded-xl shadow-lg bg-gray-800"></div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────
+let listings = [], alerts = [], settings = {}, editingAsin = null;
+
+// ── API ────────────────────────────────────────────────────────
+async function api(method, url, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+// ── Init ───────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadListings(), loadAlerts(), loadSettings(), loadStatus()]);
+  setInterval(loadStatus, 10000);
+}
+
+async function loadStatus() {
+  try {
+    const s = await api('GET', '/api/status');
+    const dot = document.getElementById('runDot');
+    const txt = document.getElementById('runText');
+    if (s.is_running) {
+      dot.className = 'w-2 h-2 rounded-full bg-yellow-400 inline-block animate-pulse';
+      txt.textContent = '检查中...';
+    } else {
+      dot.className = 'w-2 h-2 rounded-full bg-green-400 inline-block';
+      txt.textContent = '运行中';
+    }
+    if (s.last_check_time) {
+      document.getElementById('lastCheckText').textContent =
+        '上次检查：' + new Date(s.last_check_time).toLocaleTimeString('zh-CN');
+    }
+  } catch {
+    document.getElementById('runDot').className = 'w-2 h-2 rounded-full bg-red-400 inline-block';
+    document.getElementById('runText').textContent = '连接失败';
+  }
+}
+
+// ── Tabs ───────────────────────────────────────────────────────
+function showTab(tab) {
+  ['listings','alerts','settings'].forEach(t => {
+    document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
+    const btn = document.getElementById('tab-' + t);
+    if (t === tab) {
+      btn.className = 'text-sm font-medium px-4 py-1.5 rounded-md transition-all bg-blue-600 text-white';
+    } else {
+      btn.className = 'text-sm font-medium px-4 py-1.5 rounded-md transition-all text-gray-500 hover:bg-gray-50';
+    }
+  });
+}
+
+// ── Listings ───────────────────────────────────────────────────
+async function loadListings() {
+  listings = await api('GET', '/api/listings');
+  renderListings();
+}
+
+function renderListings() {
+  document.getElementById('listingCountText').textContent = listings.length + ' 个商品';
+  const el = document.getElementById('listingsBody');
+
+  if (!listings.length) {
+    el.innerHTML = `<div class="text-center py-16 text-gray-400"><div class="text-5xl mb-3">📦</div><p class="text-sm">还没有监控项，输入 ASIN 添加</p></div>`;
+    return;
+  }
+
+  const header = `
+    <div class="grid grid-cols-12 gap-2 px-5 py-2 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-500">
+      <div class="col-span-2">ASIN</div>
+      <div class="col-span-3">商品名称</div>
+      <div class="col-span-1 text-center">价格</div>
+      <div class="col-span-1 text-center">可售</div>
+      <div class="col-span-1 text-center">购物车</div>
+      <div class="col-span-2">Buy Box</div>
+      <div class="col-span-1">上次检查</div>
+      <div class="col-span-1 text-right">操作</div>
+    </div>`;
+
+  const rows = listings.map(l => {
+    const c = l.last_check;
+    const price  = c && c.price != null ? '$' + Number(c.price).toFixed(2) : '--';
+    const avail  = !c ? gray('未检查') : c.is_available ? green('正常') : red('不可售');
+    const cart   = !c ? gray('未检查') : c.has_cart    ? green('有')   : red('无');
+    let buyboxHtml = gray('--');
+    if (c) {
+      if (!c.buybox_seller) {
+        buyboxHtml = gray('未知');
+      } else if (l.seller_name && c.buybox_seller !== l.seller_name) {
+        buyboxHtml = `${red('⚠️ 被抢')} <span class="text-xs text-gray-400">${esc(c.buybox_seller)}</span>`;
+      } else {
+        buyboxHtml = `<span class="text-xs text-gray-600 truncate">${esc(c.buybox_seller)}</span>`;
+      }
+    }
+    const failWarn = l.consecutive_failures >= 3
+      ? `<span class="block text-red-500 text-xs mt-0.5">连续失败${l.consecutive_failures}次</span>` : '';
+    const nameHtml = l.name
+      ? `<span class="truncate" title="${esc(l.name)}">${esc(l.name)}</span>`
+      : `<span class="text-gray-300">待检查</span>`;
+
+    return `
+      <div class="grid grid-cols-12 gap-2 px-5 py-3 border-b border-gray-50 hover:bg-gray-50/70 text-sm items-center">
+        <div class="col-span-2">
+          <a href="https://www.amazon.com/dp/${l.asin}" target="_blank"
+            class="font-mono text-blue-600 hover:underline text-xs">${l.asin}</a>${failWarn}
+        </div>
+        <div class="col-span-3 text-xs text-gray-600 truncate max-w-xs">${nameHtml}</div>
+        <div class="col-span-1 text-center text-xs font-semibold text-gray-700">${price}</div>
+        <div class="col-span-1 text-center">${avail}</div>
+        <div class="col-span-1 text-center">${cart}</div>
+        <div class="col-span-2 flex items-center gap-1 min-w-0">${buyboxHtml}</div>
+        <div class="col-span-1 text-xs text-gray-400">${timeAgo(c && c.checked_at)}</div>
+        <div class="col-span-1 flex justify-end gap-2">
+          <button onclick="openModal('${l.asin}')" class="text-xs text-blue-600 hover:text-blue-800">配置</button>
+          <button onclick="delListing('${l.asin}')" class="text-xs text-red-500 hover:text-red-700">删除</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = header + rows;
+}
+
+function green(t) { return `<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">${t}</span>`; }
+function red(t)   { return `<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">${t}</span>`; }
+function gray(t)  { return `<span class="text-xs text-gray-400">${t}</span>`; }
+
+async function quickAdd() {
+  const input = document.getElementById('newAsin');
+  const asin = input.value.trim().toUpperCase();
+  if (!asin) { showToast('请输入 ASIN', 'warn'); return; }
+  if (!/^[A-Z0-9]{10}$/.test(asin)) { showToast('ASIN 应为10位字母数字', 'warn'); return; }
+  const r = await api('POST', '/api/listings', { asin });
+  if (r.error) { showToast(r.error, 'error'); return; }
+  input.value = '';
+  showToast('已添加：' + asin);
+  await loadListings();
+}
+
+async function delListing(asin) {
+  if (!confirm(`确认删除 ${asin}？`)) return;
+  await api('DELETE', '/api/listings/' + asin);
+  showToast('已删除 ' + asin);
+  await loadListings();
+}
+
+// ── Modal ──────────────────────────────────────────────────────
+const MONITOR_ITEMS = [
+  { key: 'monitor_price_short', label: '价格短期波动', desc: '与上次抓取对比，超阈值告警' },
+  { key: 'monitor_price_daily', label: '价格日均波动', desc: '与昨日均价对比，超阈值告警' },
+  { key: 'monitor_unavailable', label: '链接不可售',   desc: '检测 Currently Unavailable' },
+  { key: 'monitor_no_cart',     label: '购物车消失',   desc: '检测 Add to Cart 按钮消失' },
+  { key: 'monitor_buybox',      label: 'Buy Box 被抢', desc: '需配置店铺名称才生效' },
+];
+
+function openModal(asin) {
+  editingAsin = asin;
+  const l = listings.find(x => x.asin === asin);
+  if (!l) return;
+
+  document.getElementById('m-asin').textContent = asin + (l.name ? '　' + l.name : '');
+  document.getElementById('m-seller').value = l.seller_name || '';
+
+  document.getElementById('m-toggles').innerHTML = MONITOR_ITEMS.map(d => `
+    <div class="flex items-center justify-between py-1">
+      <div>
+        <p class="text-sm text-gray-700">${d.label}</p>
+        <p class="text-xs text-gray-400">${d.desc}</p>
+      </div>
+      <label class="toggle-wrap ml-4">
+        <input type="checkbox" id="m-${d.key}" ${l[d.key] ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>`).join('');
+
+  const modal = document.getElementById('modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeModal() {
+  const modal = document.getElementById('modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  editingAsin = null;
+}
+
+async function saveModal() {
+  if (!editingAsin) return;
+  const data = { seller_name: document.getElementById('m-seller').value.trim() };
+  MONITOR_ITEMS.forEach(d => { data[d.key] = document.getElementById('m-' + d.key).checked; });
+  await api('PUT', '/api/listings/' + editingAsin, data);
+  showToast('配置已保存');
+  closeModal();
+  await loadListings();
+}
+
+// ── Alerts ─────────────────────────────────────────────────────
+async function loadAlerts() {
+  alerts = await api('GET', '/api/alerts');
+  renderAlerts();
+  const badge = document.getElementById('alertBadge');
+  if (alerts.length) {
+    badge.textContent = alerts.length > 99 ? '99+' : alerts.length;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+const ALERT_CFG = {
+  unavailable: { icon: '⚠️', cls: 'border-red-100 bg-red-50',    tag: 'bg-red-100 text-red-700',    label: '不可售' },
+  no_cart:     { icon: '🛒', cls: 'border-orange-100 bg-orange-50', tag: 'bg-orange-100 text-orange-700', label: '购物车' },
+  buybox:      { icon: '🥊', cls: 'border-purple-100 bg-purple-50', tag: 'bg-purple-100 text-purple-700', label: 'Buy Box' },
+  price_short: { icon: '📊', cls: 'border-yellow-100 bg-yellow-50', tag: 'bg-yellow-100 text-yellow-700', label: '短期价格' },
+  price_daily: { icon: '📈', cls: 'border-blue-100 bg-blue-50',   tag: 'bg-blue-100 text-blue-700',   label: '日均价格' },
+  fetch_fail:  { icon: '❌', cls: 'border-gray-100 bg-gray-50',   tag: 'bg-gray-100 text-gray-600',   label: '抓取失败' },
+};
+
+function renderAlerts() {
+  const el = document.getElementById('alertsBody');
+  if (!alerts.length) {
+    el.innerHTML = `<div class="text-center py-16 text-gray-400"><div class="text-5xl mb-3">✅</div><p class="text-sm">暂无告警记录</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="p-4 space-y-2">` + alerts.map(a => {
+    const cfg = ALERT_CFG[a.alert_type] || ALERT_CFG.fetch_fail;
+    return `
+      <div class="border ${cfg.cls} rounded-lg p-3.5 flex gap-3">
+        <span class="text-lg flex-shrink-0 mt-0.5">${cfg.icon}</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="text-xs font-medium px-1.5 py-0.5 rounded ${cfg.tag}">${cfg.label}</span>
+            <span class="font-mono text-xs text-gray-500">${a.asin}</span>
+            <span class="text-xs text-gray-400">${formatTime(a.triggered_at)}</span>
+          </div>
+          <p class="text-sm text-gray-700 whitespace-pre-wrap">${esc(a.message)}</p>
+        </div>
+      </div>`;
+  }).join('') + `</div>`;
+}
+
+async function doClearAlerts() {
+  if (!confirm('确认清空所有告警记录？')) return;
+  await api('DELETE', '/api/alerts');
+  showToast('告警记录已清空');
+  await loadAlerts();
+}
+
+// ── Settings ───────────────────────────────────────────────────
+async function loadSettings() {
+  settings = await api('GET', '/api/settings');
+  document.getElementById('s-short').value    = settings.price_short_threshold || 30;
+  document.getElementById('s-daily').value    = settings.price_daily_threshold || 40;
+  document.getElementById('s-interval').value = settings.check_interval || 60;
+  const ee = settings.email_enabled === 'true';
+  document.getElementById('s-email-on').checked = ee;
+  toggleSection('emailFields', ee);
+  if (settings.email_user)    document.getElementById('s-email-user').value    = settings.email_user;
+  if (settings.email_pass)    document.getElementById('s-email-pass').value    = settings.email_pass;
+  if (settings.email_to)      document.getElementById('s-email-to').value      = settings.email_to;
+  const fe = settings.feishu_enabled === 'true';
+  document.getElementById('s-feishu-on').checked = fe;
+  toggleSection('feishuFields', fe);
+  if (settings.feishu_webhook) document.getElementById('s-feishu-webhook').value = settings.feishu_webhook;
+}
+
+function toggleSection(id, enabled) {
+  const el = document.getElementById(id);
+  el.classList.toggle('opacity-40', !enabled);
+  el.classList.toggle('pointer-events-none', !enabled);
+}
+
+async function saveSettings() {
+  const data = {
+    price_short_threshold: document.getElementById('s-short').value,
+    price_daily_threshold: document.getElementById('s-daily').value,
+    check_interval:        document.getElementById('s-interval').value,
+    email_enabled:  document.getElementById('s-email-on').checked ? 'true' : 'false',
+    email_user:     document.getElementById('s-email-user').value.trim(),
+    email_pass:     document.getElementById('s-email-pass').value,
+    email_to:       document.getElementById('s-email-to').value.trim(),
+    feishu_enabled: document.getElementById('s-feishu-on').checked ? 'true' : 'false',
+    feishu_webhook: document.getElementById('s-feishu-webhook').value.trim(),
+  };
+  await api('POST', '/api/settings', data);
+  showToast('设置已保存，定时任务已更新');
+}
+
+async function doTestEmail() {
+  showToast('发送中...', 'info');
+  const r = await api('POST', '/api/test/email');
+  showToast(r.success ? '✅ 测试邮件已发送，请查收' : '❌ ' + r.error, r.success ? 'ok' : 'error');
+}
+
+async function doTestFeishu() {
+  showToast('发送中...', 'info');
+  const r = await api('POST', '/api/test/feishu');
+  showToast(r.success ? '✅ 飞书消息已发送' : '❌ ' + r.error, r.success ? 'ok' : 'error');
+}
+
+// ── Manual Check ───────────────────────────────────────────────
+async function doCheck() {
+  const btn = document.getElementById('checkBtn');
+  btn.disabled = true;
+  btn.textContent = '检查中...';
+  try {
+    const r = await api('POST', '/api/check');
+    if (r.skipped) showToast(r.message, 'warn');
+    else {
+      showToast(`检查完成 ✅ ${r.success}/${r.total} 成功，${r.alerts} 条告警`);
+      await Promise.all([loadListings(), loadAlerts()]);
+    }
+  } catch (e) {
+    showToast('请求失败：' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 立即检查';
+  }
+}
+
+// ── Utils ──────────────────────────────────────────────────────
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function timeAgo(iso) {
+  if (!iso) return '--';
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return m + '分钟前';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + '小时前';
+  return Math.floor(h / 24) + '天前';
+}
+
+function formatTime(iso) {
+  return iso ? new Date(iso).toLocaleString('zh-CN') : '--';
+}
+
+let toastTimer;
+function showToast(msg, type = 'ok') {
+  const colors = { ok: 'bg-gray-800', warn: 'bg-amber-500', error: 'bg-red-600', info: 'bg-blue-600' };
+  const el = document.getElementById('toast');
+  const msg_el = document.getElementById('toastMsg');
+  msg_el.className = `text-white text-sm px-4 py-3 rounded-xl shadow-lg ${colors[type] || 'bg-gray-800'}`;
+  msg_el.textContent = msg;
+  el.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
+  el.classList.add('opacity-100', 'translate-y-0');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove('opacity-100', 'translate-y-0');
+    el.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
+  }, 3500);
+}
+
+init();
+</script>
+</body>
+</html>

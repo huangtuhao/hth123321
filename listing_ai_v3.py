@@ -23,6 +23,7 @@ poe.update_settings(SettingsResponse(
 5. **产品描述**（可选，说明您的产品与参考竞品的不同之处）
 6. **关键词数据Excel表格**（可选，用于标题五点优化，也可稍后上传）
 7. **品牌名称**（可选，在消息中注明"品牌：XXX"即可自动识别）
+8. **AI模型**（可选，默认Gemini-3.1-Pro，在消息中注明"AI：模型名"即可切换，例如"AI：Claude-Sonnet-4.6"）
 
 💡 **提示**：
 - 参考链接通常是最接近您产品的已上架产品
@@ -267,7 +268,7 @@ class ListingDesigner:
 
 ---
 
-❌ **严禁在回答中输出任何【...】格式的系统流程标记。** 聊天记录中的【分支A开始】【基础阶段 1 完成】【分支B-阶段 2 完成】等标记是程序自动插入的流程控制符号，不属于你的输出内容。你只需输出上述要求的分析内容本身。"""
+❌ **严禁在回答中输出任何【...】格式的系统流程标记。** 聊天记录中的【分支A开始】【基础阶段 1 完成】【分支B-阶段 2 完成】等标记是程序自动插入的流程控制符号，不属于你的输出内容。"""
 
     # 用于过滤 AI 输出中的系统标记
     _MARKER_RE = re.compile(
@@ -303,7 +304,7 @@ class ListingDesigner:
             was_replace = False
 
             for p in poe.stream(
-                "Gemini-3.1-Pro",
+                self._get_model_name(),
                 system_msg,
                 poe.default_chat,
                 prompt,
@@ -369,6 +370,12 @@ class ListingDesigner:
         match = re.search(r'【品牌名：(.+?)】', chat_text)
         return match.group(1) if match else ""
 
+    def _get_model_name(self):
+        """从聊天历史中获取用户指定的AI模型名称，默认 Gemini-3.1-Pro。"""
+        chat_text = poe.default_chat.text
+        match = re.search(r'【AI模型：(.+?)】', chat_text)
+        return match.group(1) if match else "Gemini-3.1-Pro"
+
     def _get_voc_for_prompt(self):
         """获取 VOC（买家原话）数据，用于注入五点生成 prompt。"""
         summary = self.get_summary("INFO_VOC")
@@ -429,6 +436,13 @@ class ListingDesigner:
                 if brand_match:
                     brand_name = brand_match.group(1).strip()
                     break
+
+        # 自动提取AI模型名称
+        ai_model = ""
+        if remaining_text:
+            ai_match = re.search(r'(?:AI|ai|Ai)\s*[：:]\s*([A-Za-z0-9._-]+)', remaining_text)
+            if ai_match:
+                ai_model = ai_match.group(1).strip()
 
         for attachment in poe.query.attachments:
             file_ext = attachment.name.lower()
@@ -544,7 +558,7 @@ class ListingDesigner:
 
 要求：量化、直观、全面保留关键信息。买家原话必须是评论中真实出现的英文表达，不要翻译或改写。"""
 
-                review_summary_response = poe.call("Gemini-3.1-Pro", review_prompt)
+                review_summary_response = poe.call(self._get_model_name(), review_prompt)
 
                 with poe.start_message() as msg:
                     msg.write("### 📝 评论数据结构化摘要\n\n")
@@ -594,7 +608,7 @@ Output in ```json format:
 
 要求：量化、直观、提炼关键信息。"""
 
-                comp_summary_response = poe.call("Gemini-3.1-Pro", comp_prompt)
+                comp_summary_response = poe.call(self._get_model_name(), comp_prompt)
 
                 with poe.start_message() as msg:
                     msg.write("### 🏆 竞品数据结构化摘要\n\n")
@@ -625,6 +639,10 @@ Output in ```json format:
                 if brand_name:
                     msg.write(f"✅ 品牌名称已识别：**{brand_name}**\n\n")
                     msg.write(f"【品牌名：{brand_name}】\n\n")
+
+                if ai_model:
+                    msg.write(f"🤖 AI模型已切换：**{ai_model}**\n\n")
+                    msg.write(f"【AI模型：{ai_model}】\n\n")
 
                 msg.write("【信息已收集】\n\n")
 
@@ -749,11 +767,22 @@ Output in ```json format:
 - 分析要具体、有依据
 """
 
-        # 使用Gemini-3-Pro的web_search功能
-        ref_response = poe.call(
-            "Gemini-3.1-Pro",
-            poe.Message(text=ref_prompt, parameters={"web_search": True})
-        )
+        # 使用AI模型的web_search功能（带重试）
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                ref_response = poe.call(
+                    self._get_model_name(),
+                    poe.Message(text=ref_prompt, parameters={"web_search": True})
+                )
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    with poe.start_message() as msg:
+                        msg.write(f"⚠️ 网络搜索出错，正在重试（{attempt + 2}/{max_retries}）...\n\n")
+                    time.sleep(2)
+                else:
+                    raise
 
         with poe.start_message() as msg:
             msg.write(ref_response.text)
@@ -773,10 +802,19 @@ Output in ```json format:
                 self.show_branch_menu()
             else:
                 self.execute_base_stage(next_stage)
-        else:
-            # 用户提供反馈，重新生成当前阶段
+        elif "重新生成" in user_input:
+            # 基于讨论内容重新生成当前阶段
             if current_base_stage >= 0:
-                self.execute_stage_with_feedback("base", current_base_stage, user_input)
+                self.execute_stage_with_feedback(
+                    "base", current_base_stage,
+                    "请参考对话历史中关于当前阶段结果的讨论内容，重新生成。讨论中达成的共识和修改方向应体现在新的输出中。"
+                )
+            else:
+                self.execute_base_stage(0)
+        else:
+            # 讨论模式：自由对话，不触发重新生成
+            if current_base_stage >= 0:
+                self.handle_discussion(user_input)
             else:
                 self.execute_base_stage(0)
 
@@ -812,9 +850,9 @@ Output in ```json format:
             msg.write(self._format_stage_stats(stats))
             msg.write("\n")
             if stage_num < len(self.base_stages) - 1:
-                msg.write("💡 请回复「**继续**」进入下一阶段，或提出调整要求。\n")
+                msg.write("💡 直接输入讨论内容，或回复「**重新生成**」重做当前阶段，或回复「**继续**」进入下一阶段。\n")
             else:
-                msg.write("💡 基础分析已完成！请回复「**继续**」选择要生成的内容，或对当前结果提出调整要求。\n")
+                msg.write("💡 基础分析已完成！直接输入讨论内容，或回复「**重新生成**」重做当前阶段，或回复「**继续**」选择要生成的内容。\n")
 
     def show_branch_menu(self):
         """显示分支选择菜单"""
@@ -860,9 +898,14 @@ Output in ```json format:
         if current_branch:
             if "继续" in user_input or "下一步" in user_input:
                 self.continue_branch(current_branch, current_stage)
+            elif "重新生成" in user_input:
+                self.execute_stage_with_feedback(
+                    current_branch, current_stage,
+                    "请参考对话历史中关于当前阶段结果的讨论内容，重新生成。讨论中达成的共识和修改方向应体现在新的输出中。"
+                )
             else:
-                # 用户反馈，重新生成
-                self.execute_stage_with_feedback(current_branch, current_stage, user_input)
+                # 讨论模式：自由对话，不触发重新生成
+                self.handle_discussion(user_input)
             return
 
         # 检查是否需要上传关键词（选择了分支C但没有关键词数据）
@@ -1073,9 +1116,9 @@ Output in ```json format:
             msg.write("\n")
 
             if stage_num < len(stages) - 1:
-                msg.write("💡 请回复「**继续**」进入下一阶段，或提出调整要求。\n")
+                msg.write("💡 直接输入讨论内容，或回复「**重新生成**」重做当前阶段，或回复「**继续**」进入下一阶段。\n")
             else:
-                msg.write("💡 请回复「**继续**」完成此分支，或对当前结果提出调整要求。\n")
+                msg.write("💡 直接输入讨论内容，或回复「**重新生成**」重做当前阶段，或回复「**继续**」完成此分支。\n")
 
     def complete_branch(self, branch):
         """完成分支"""
@@ -1118,6 +1161,14 @@ Output in ```json format:
             msg.write("- 对当前结果提出修改意见\n\n")
 
         self.show_branch_menu()
+
+    def handle_discussion(self, user_input):
+        """讨论模式：与AI自由对话讨论当前阶段结果，不触发重新生成。"""
+        self._call_ai(user_input)
+
+        with poe.start_message() as msg:
+            msg.write("\n\n---\n\n")
+            msg.write("💡 继续讨论，或回复「**重新生成**」基于讨论重做当前阶段，或回复「**继续**」进入下一阶段。\n")
 
     def execute_stage_with_feedback(self, stage_type, stage_num, user_feedback):
         """根据用户反馈重新执行阶段"""
@@ -1166,7 +1217,7 @@ Output in ```json format:
             msg.write(f"{marker}\n\n")
             msg.write(self._format_stage_stats(stats))
             msg.write("\n")
-            msg.write("💡 请回复「**继续**」或提出调整要求。\n")
+            msg.write("💡 直接输入讨论内容，或回复「**重新生成**」重做当前阶段，或回复「**继续**」进入下一阶段。\n")
 
     # ============ 基础上下文 ============
 
@@ -1301,6 +1352,37 @@ Output in ```json format:
         result = '\n'.join(clean_lines).strip()
         return result[:4000] if len(result) > 100 else "[未找到有效阶段输出]"
 
+    def get_previous_branch_outputs(self):
+        """获取已完成分支的输出摘要（跨分支参考信息），每个分支截断到1500字符。"""
+        chat_text = poe.default_chat.text
+        sections = []
+
+        for branch, label in [("A", "主图+附图"), ("B", "A+页面"), ("C", "标题五点")]:
+            marker = f"【分支{branch}完成】"
+            if marker not in chat_text:
+                continue
+
+            start_marker = f"【分支{branch}开始】"
+            start_pos = chat_text.rfind(start_marker)
+            end_pos = chat_text.rfind(marker)
+
+            if start_pos >= 0 and end_pos > start_pos:
+                content = chat_text[start_pos:end_pos]
+                # 清理系统标记和UI元素
+                lines = content.split('\n')
+                clean_lines = [l for l in lines if not any(
+                    x in l for x in ['【', '💡', '请回复', 'AI分析中', '# ⚙️', '📊 **本阶段统计']
+                )]
+                clean = '\n'.join(clean_lines).strip()
+                if len(clean) > 1500:
+                    clean = clean[:1500] + "\n...[已截断]"
+                sections.append(f"### 已完成分支{branch}（{label}）摘要\n{clean}")
+
+        if not sections:
+            return ""
+
+        return "## 📋 已完成的其他分支（跨分支参考）\n\n" + "\n\n".join(sections) + "\n\n"
+
     # ============ Prompt构建 ============
 
     def build_base_prompt(self, stage_num):
@@ -1313,17 +1395,13 @@ Output in ```json format:
         injected_data = []
 
         if stage_num == 0:
-            prompt = f"""# 🎯 本阶段任务：消费者洞察分析
-
-你是一位资深的亚马逊运营专家和消费者洞察分析师。
-**本阶段的唯一任务是：基于基础信息，进行深度的消费者洞察分析。**
-⚠️ 不要生成 listing 文案、标题、五点描述或任何营销内容。只做分析。
+            prompt = f"""{base_context}
 
 ---
 
-{base_context}
+# 🎯 本阶段任务：消费者洞察分析
 
----
+你是一位资深的亚马逊运营专家和消费者洞察分析师。请基于上述基础信息，进行深度的消费者洞察分析。
 
 ## 输出要求
 
@@ -1356,16 +1434,16 @@ Output in ```json format:
             consumer_insights = self.extract_stage_output("base", 0)
             injected_data.append({"name": "消费者洞察（聚焦片段）", "len": len(consumer_insights)})
 
-            prompt = f"""# 🎯 本阶段任务：使用流程复现
+            prompt = f"""{base_context}
 
-你是一位产品体验设计专家。
-**本阶段的唯一任务是：完整复现产品的使用流程。**
-⚠️ 不要生成 listing 文案、标题、五点描述或任何营销内容。只做使用流程分析。
-
-**基础阶段1消费者洞察分析结果（聚焦片段，完整内容见对话历史）：**
+**消费者洞察分析结果（聚焦片段，完整内容见对话历史）：**
 {consumer_insights}
 
 ---
+
+# 🎯 本阶段任务：使用流程复现
+
+你是一位产品体验设计专家。请聚焦于完整复现产品的使用流程。
 
 ## 输出要求
 
@@ -1397,16 +1475,16 @@ Output in ```json format:
             usage_flow = self.extract_stage_output("base", 1)
             injected_data.append({"name": "使用流程（聚焦片段）", "len": len(usage_flow)})
 
-            prompt = f"""# 🎯 本阶段任务：卖点提取
+            prompt = f"""{base_context}
 
-你是一位产品竞争分析专家。
-**本阶段的唯一任务是：基于使用流程的每个步骤，提取产品卖点。**
-⚠️ 不要生成 listing 文案、标题、五点描述或任何营销内容。只做卖点提取分析。
-
-**基础阶段2使用流程分析结果（聚焦片段，完整内容见对话历史）：**
+**使用流程分析结果（聚焦片段，完整内容见对话历史）：**
 {usage_flow}
 
 ---
+
+# 🎯 本阶段任务：卖点提取
+
+你是一位产品竞争分析专家。请聚焦于基于使用流程的每个步骤，提取产品卖点。
 
 ## 输出要求
 
@@ -1460,18 +1538,22 @@ Output in ```json format:
     def build_branch_prompt(self, branch, stage_num):
         """构建分支阶段的prompt。返回 (prompt, stats)。
 
-        数据注入策略：只注入当前阶段直接需要的前序片段（4000字符截断）作为聚焦引导，
-        完整上下文由 poe.default_chat 提供。
+        数据注入策略：base_context + 直接需要的前序片段（4000字符截断）作为聚焦引导，
+        stage 0 额外注入已完成分支摘要（跨分支参考），完整上下文由 poe.default_chat 提供。
         """
         base_context = self.get_base_context()
         selling_points = self.extract_stage_output("base", 2)  # 卖点提取
+        reference_section = self.get_previous_branch_outputs() if stage_num == 0 else ""
 
         if branch == "A":
-            prompt, extra_data = self.build_branch_a_prompt(stage_num, base_context, selling_points)
+            prompt, extra_data = self.build_branch_a_prompt(stage_num, base_context, selling_points, reference_section)
         elif branch == "B":
-            prompt, extra_data = self.build_branch_b_prompt(stage_num, base_context, selling_points)
+            prompt, extra_data = self.build_branch_b_prompt(stage_num, base_context, selling_points, reference_section)
         else:
-            prompt, extra_data = self.build_branch_c_prompt(stage_num, base_context, selling_points)
+            prompt, extra_data = self.build_branch_c_prompt(stage_num, base_context, selling_points, reference_section)
+
+        if reference_section:
+            extra_data.append({"name": "跨分支参考", "len": len(reference_section)})
 
         stats = {
             "base_context_len": len(base_context),
@@ -1481,7 +1563,7 @@ Output in ```json format:
         }
         return prompt, stats
 
-    def build_branch_a_prompt(self, stage_num, base_context, selling_points):
+    def build_branch_a_prompt(self, stage_num, base_context, selling_points, reference_section):
         """分支A：主副图。返回 (prompt, extra_data)。"""
         extra_data = []
         if stage_num == 0:
@@ -1490,24 +1572,23 @@ Output in ```json format:
             extra_data.append({"name": "消费者洞察（聚焦片段）", "len": len(consumer_insights)})
             extra_data.append({"name": "卖点提取（聚焦片段）", "len": len(selling_points)})
 
-            prompt = f"""# 🎯 本阶段任务：卖点选择与排序（主图+附图）
-
-你是一位亚马逊Listing优化专家。
-**本阶段的唯一任务是：为亚马逊主图+6张附图（共7张）确定表达内容和顺序。**
-
-**基础阶段1消费者洞察（聚焦片段，完整内容见对话历史）：**
+            prompt = f"""{base_context}
+{reference_section}
+**消费者洞察（聚焦片段，完整内容见对话历史）：**
 {consumer_insights}
 
-**基础阶段3卖点提取（聚焦片段，完整内容见对话历史）：**
+**卖点提取（聚焦片段，完整内容见对话历史）：**
 {selling_points}
 
 ---
 
+# 🎯 本阶段任务：卖点选择与排序（主图+附图）
+
+你是一位亚马逊Listing优化专家。请为亚马逊主图+6张附图（共7张）确定表达内容和顺序。
+
 ## 输出要求
 
-基于基础分析结果，请为亚马逊主图+6张附图（共7张）确定表达内容和顺序。
-
-请输出：
+基于基础分析结果，请输出：
 
 ## 图片规划
 
@@ -1542,17 +1623,10 @@ Output in ```json format:
 ## 排序逻辑说明
 [解释为什么按这个顺序排列]
 
-## 🔍 搜索结果页竞争分析（主图专项）
-基于竞品数据分析，请推理搜索结果页的视觉竞争环境：
-- **竞品主图普遍在表达什么？**（推测同质化程度高的方向）
-- **主图如何在搜索结果页脱颖而出？**（差异化视觉策略）
-- **主图的核心目标是 CTR（点击率）**，不只是展示卖点，更要在一排相似的图中抓住眼球
-
 要求：
 - 结合消费者最关心的点进行优先排序
 - 考虑视觉呈现的逻辑性和连贯性
 - 确保覆盖核心购买决策因素
-- **主图设计需要考虑与竞品的视觉差异化**
 """
 
         elif stage_num == 1:
@@ -1560,21 +1634,20 @@ Output in ```json format:
             image_plan = self.extract_stage_output("A", 0)
             extra_data.append({"name": "卖点选择与排序（聚焦片段）", "len": len(image_plan)})
 
-            prompt = f"""# 🎯 本阶段任务：卖点表达方式设计
+            prompt = f"""{base_context}
 
-你是一位创意设计策略专家，精通各行业的视觉表达方式。
-**本阶段的唯一任务是：为每张图片设计专业的表达方式和AI绘图prompt。**
-
-**分支A-阶段1卖点选择与排序结果（聚焦片段，完整内容见对话历史）：**
+**卖点选择与排序结果（聚焦片段，完整内容见对话历史）：**
 {image_plan}
 
 ---
 
+# 🎯 本阶段任务：卖点表达方式设计
+
+你是一位创意设计策略专家，精通各行业的视觉表达方式。请为每张图片设计专业的表达方式和AI绘图prompt。
+
 ## 输出要求
 
-基于上述图片规划，为每张图片设计专业的表达方式和AI绘图prompt。
-
-对于每张图片，请：
+基于上述图片规划，对于每张图片，请：
 1. 研究该卖点在同类产品中的常见表达方式
 2. 思考其他行业/品牌如何专业地表达类似卖点
 3. 提供具体的设计建议
@@ -1616,10 +1689,7 @@ Output in ```json format:
             if keyword_section:
                 extra_data.append({"name": "Top 关键词", "len": len(keyword_section)})
 
-            prompt = f"""# 🎯 本阶段任务：主图+附图设计Brief生成
-
-你是一位专业的设计项目经理。
-**本阶段的唯一任务是：生成一份完整的、适合外包设计公司使用的主图+附图设计Brief文档。**
+            prompt = f"""{base_context}
 
 **消费者洞察（聚焦片段，完整内容见对话历史）：**
 {consumer_insights}
@@ -1633,9 +1703,13 @@ Output in ```json format:
 
 ---
 
+# 🎯 本阶段任务：主图+附图设计Brief生成
+
+你是一位专业的设计项目经理。请生成一份完整的、适合外包设计公司使用的主图+附图设计Brief文档。
+
 ## 输出要求
 
-请基于上述所有分析结果（特别是图片规划和设计方案），生成一份完整的、适合外包设计公司使用的主图+附图设计Brief文档。
+请基于上述所有分析结果（特别是图片规划和设计方案），生成Brief文档。
 
 ⚠️ **重要约束：每张图的核心卖点必须严格遵循前序「卖点选择与排序」阶段中的卖点分配，不得更改、替换或重新排序。Brief 中每张图的核心卖点必须与图片规划一一对应。**
 
@@ -1687,7 +1761,7 @@ Output in ```json format:
         prompt += self._NO_MARKERS_INSTRUCTION
         return prompt, extra_data
 
-    def build_branch_b_prompt(self, stage_num, base_context, selling_points):
+    def build_branch_b_prompt(self, stage_num, base_context, selling_points, reference_section):
         """分支B：A+页面。返回 (prompt, extra_data)。"""
         extra_data = []
         brand = self._get_brand_name()
@@ -1701,10 +1775,8 @@ Output in ```json format:
             extra_data.append({"name": "使用流程（聚焦片段）", "len": len(usage_flow)})
             extra_data.append({"name": "卖点提取（聚焦片段）", "len": len(selling_points)})
 
-            prompt = f"""# 🎯 本阶段任务：A+页面模块规划
-
-你是一位亚马逊A+页面设计专家。
-**本阶段的唯一任务是：为A+页面规划模块布局。**
+            prompt = f"""{base_context}
+{reference_section}
 {brand_section}
 
 **消费者洞察（聚焦片段，完整内容见对话历史）：**
@@ -1718,11 +1790,15 @@ Output in ```json format:
 
 ---
 
-## 输出要求
+# 🎯 本阶段任务：A+页面模块规划
+
+你是一位亚马逊A+页面设计专家。请为A+页面规划模块布局。
 
 A+页面是品牌展示和深度说服的核心工具，需要通过多个模块组合来全面呈现产品价值。
 
 ⚠️ **图片规格要求**：所有 A+ 模块统一使用**高级A+完整图片模式**（Premium A+ Full-Width Image Module，每个模块为一张 1464×600px 的完整设计图，图片上集成文案和视觉元素，不使用亚马逊的默认文字+小图混排模板）。请基于此格式规划每个模块。
+
+## 输出要求
 
 请规划A+页面的模块设计（建议5个模块，可根据需要增减）：
 
@@ -1750,10 +1826,7 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
             if keyword_section:
                 extra_data.append({"name": "Top 关键词", "len": len(keyword_section)})
 
-            prompt = f"""# 🎯 本阶段任务：A+页面设计Brief生成
-
-你是一位专业的A+页面设计项目经理。
-**本阶段的唯一任务是：生成详细的A+页面设计Brief文档。**
+            prompt = f"""{base_context}
 {brand_section}
 
 **A+页面模块规划（聚焦片段，完整内容见对话历史）：**
@@ -1762,9 +1835,13 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
 
 ---
 
+# 🎯 本阶段任务：A+页面设计Brief生成
+
+你是一位专业的A+页面设计项目经理。请生成详细的A+页面设计Brief文档。
+
 ## 输出要求
 
-请基于上述模块规划，生成详细的A+页面设计Brief文档。
+请基于上述模块规划，生成Brief文档。
 
 ⚠️ **图片规格要求**：所有模块统一使用**高级A+完整图片模式**（Premium A+ Full-Width Image Module，每个模块尺寸 1464×600px，文案和视觉元素直接设计在图片上）。
 
@@ -1804,7 +1881,7 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
         prompt += self._NO_MARKERS_INSTRUCTION
         return prompt, extra_data
 
-    def build_branch_c_prompt(self, stage_num, base_context, selling_points):
+    def build_branch_c_prompt(self, stage_num, base_context, selling_points, reference_section):
         """分支C：标题五点。返回 (prompt, extra_data)。"""
         extra_data = []
         if stage_num == 0:
@@ -1813,11 +1890,8 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
             extra_data.append({"name": "关键词数据（全量）", "len": len(keyword_data) if keyword_data else 0})
             extra_data.append({"name": "卖点提取（聚焦片段）", "len": len(selling_points)})
 
-            prompt = f"""# 🎯 本阶段任务：关键词策略分析
-
-你是一位亚马逊SEO和关键词策略专家。
-**本阶段的唯一任务是：基于关键词数据和分析结果，制定关键词策略。**
-
+            prompt = f"""{base_context}
+{reference_section}
 **卖点提取（聚焦片段，完整内容见对话历史）：**
 {selling_points}
 
@@ -1825,11 +1899,13 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
 
 ---
 
+# 🎯 本阶段任务：关键词策略分析
+
+你是一位亚马逊SEO和关键词策略专家。请基于关键词数据和分析结果，制定关键词策略。
+
 ## 输出要求
 
-基于上述卖点分析和关键词数据，制定关键词策略：
-
-请输出：
+基于上述卖点分析和关键词数据，请输出：
 
 ## 关键词策略分析
 
@@ -1870,10 +1946,7 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
             extra_data.append({"name": "消费者洞察（聚焦片段）", "len": len(consumer_insights)})
             extra_data.append({"name": "卖点提取（聚焦片段）", "len": len(selling_points)})
 
-            prompt = f"""# 🎯 本阶段任务：标题生成
-
-你是一位亚马逊Listing标题优化专家。
-**本阶段的唯一任务是：基于关键词策略和卖点分析，生成标题方案。**
+            prompt = f"""{base_context}
 
 **关键词策略（聚焦片段，完整内容见对话历史）：**
 {keyword_strategy}
@@ -1886,9 +1959,11 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
 
 ---
 
-## 输出要求
+# 🎯 本阶段任务：标题生成
 
-基于上述关键词策略和卖点分析，生成标题方案：
+你是一位亚马逊Listing标题优化专家。请基于关键词策略和卖点分析，生成标题方案。
+
+## 输出要求
 
 请输出：
 
@@ -1936,10 +2011,7 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
             if voc_section:
                 extra_data.append({"name": "VOC 数据", "len": len(voc_section)})
 
-            prompt = f"""# 🎯 本阶段任务：五点描述生成
-
-你是一位亚马逊Listing五点描述优化专家。
-**本阶段的唯一任务是：基于关键词策略、标题方案和卖点分析，生成五点描述。**
+            prompt = f"""{base_context}
 
 **关键词策略（聚焦片段，完整内容见对话历史）：**
 {keyword_strategy}
@@ -1956,9 +2028,11 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
 
 ---
 
-## 输出要求
+# 🎯 本阶段任务：五点描述生成
 
-基于上述关键词策略、标题方案和卖点分析，生成五点描述：
+你是一位亚马逊Listing五点描述优化专家。请基于关键词策略、标题方案和卖点分析，生成五点描述。
+
+## 输出要求
 
 请输出：
 
@@ -2028,3 +2102,5 @@ A+页面是品牌展示和深度说服的核心工具，需要通过多个模块
 if __name__ == "__main__":
     bot = ListingDesigner()
     bot.run()
+
+

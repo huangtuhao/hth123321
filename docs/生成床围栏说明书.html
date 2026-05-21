@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A4 Print Guide Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, Helvetica, sans-serif; background: #555; padding: 20px; }
+
+/* ── Toolbar ── */
+.toolbar {
+  background: #fff; border-radius: 8px; padding: 18px 24px;
+  text-align: center; margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.3);
+}
+.toolbar h1 { font-size: 20px; color: #111; margin-bottom: 6px; }
+.toolbar p  { font-size: 13px; color: #555; margin-bottom: 14px; }
+.btn-dl {
+  background: #111; color: #fff; border: none;
+  padding: 13px 48px; font-size: 18px; font-weight: bold;
+  border-radius: 6px; cursor: pointer;
+}
+.btn-dl:hover { background: #444; }
+
+.scroll-wrap { overflow-x: auto; padding-bottom: 16px; }
+
+/* ── Preview: A4 Landscape 1485 × 1050 ── */
+#preview {
+  width: 1485px;
+  height: 1050px;
+  background: #fff;
+  display: flex;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+
+/* ── Panels ── */
+.panel {
+  flex: 1; min-width: 0; height: 1050px;
+  padding: 22px 20px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-left { border-right: 3px solid #000; }
+
+/* Title */
+.g-title {
+  font-size: 30px; font-weight: 900; color: #000;
+  letter-spacing: .5px; line-height: 1.15; flex-shrink: 0;
+}
+.g-line {
+  height: 3px; background: #000;
+  margin: 7px 0 12px; flex-shrink: 0;
+}
+
+/* ── Image Upload Box ── */
+.img-box {
+  border: 2px dashed #bbb; border-radius: 5px; background: #f9f9f9;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; position: relative; overflow: hidden; flex-shrink: 0;
+  transition: border-color .2s;
+}
+.img-box:hover { border-color: #000; }
+.panel-left  .img-box { height: 305px; margin-bottom: 12px; }
+.panel-right .img-box { height: 210px; margin-bottom: 12px; }
+
+.img-box input[type="file"] {
+  position: absolute; inset: 0; opacity: 0;
+  cursor: pointer; width: 100%; height: 100%;
+}
+.img-box .ph { text-align: center; color: #ccc; pointer-events: none; user-select: none; }
+.img-box .ph .icon { font-size: 40px; display: block; margin-bottom: 6px; }
+.img-box .ph p { font-size: 14px; }
+.img-box img { max-width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* ══ LEFT: two sections share ALL remaining space ══ */
+.left-body {
+  flex: 1; display: flex; flex-direction: column;
+  gap: 10px; min-height: 0;
+}
+.section-block {
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+}
+
+.badge {
+  display: inline-block; background: #000; color: #fff;
+  font-size: 18px; font-weight: bold;
+  padding: 7px 20px; border-radius: 3px;
+  margin-bottom: 9px; flex-shrink: 0;
+}
+
+/* i-grid grows to fill section */
+.i-grid { flex: 1; display: flex; gap: 10px; min-height: 0; }
+.i-box {
+  flex: 1;
+  border-left: 6px solid #000;
+  padding: 18px 16px;
+  background: #f2f2f2;
+  border-radius: 0 6px 6px 0;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.i-box h3 { font-size: 27px; font-weight: bold; color: #000; margin-bottom: 11px; }
+.i-box p  { font-size: 21px; color: #000; line-height: 1.7; }
+.bd { font-weight: bold; }
+.ul { text-decoration: underline; }
+
+/* ══ RIGHT ══ */
+.modes-hd {
+  font-size: 21px; font-weight: 900; color: #000;
+  border-left: 6px solid #000; padding-left: 11px;
+  margin-bottom: 11px; flex-shrink: 0;
+}
+
+/* right body fills all remaining space */
+.right-body {
+  flex: 1; display: flex; gap: 12px; min-height: 0;
+}
+.col-modes {
+  flex: 1.35; display: flex; flex-direction: column;
+  gap: 8px; min-height: 0;
+}
+.col-specs {
+  flex: 1; display: flex; flex-direction: column;
+  gap: 10px; min-height: 0;
+}
+
+/* mode cards share column height equally */
+.mode-card {
+  flex: 1;
+  border: 2px solid #000; border-radius: 5px;
+  padding: 12px 15px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.mode-card h3  { font-size: 20px; font-weight: bold; color: #000; margin-bottom: 7px; }
+.mode-card .sub{ font-size: 14.5px; font-weight: normal; color: #444; }
+.mode-card p   { font-size: 17.5px; color: #000; line-height: 1.6; }
+
+/* spec card: fixed around its content */
+.spec-card {
+  border: 2.5px solid #000; border-radius: 5px;
+  padding: 16px 15px; flex-shrink: 0;
+}
+.spec-card h3 { font-size: 22px; font-weight: bold; color: #000; margin-bottom: 13px; }
+.spec-card ul { list-style: none; }
+.spec-card li {
+  font-size: 17.5px; color: #000;
+  margin-bottom: 11px; padding-left: 17px;
+  position: relative; line-height: 1.45;
+}
+.spec-card li::before { content: "•"; position: absolute; left: 0; font-weight: bold; }
+.spec-card li.em { font-weight: bold; }
+
+/* setup card grows to fill remaining right column */
+.setup-card {
+  flex: 1;
+  border: 2px solid #000; border-radius: 5px;
+  padding: 15px; background: #f2f2f2;
+  display: flex; flex-direction: column;
+}
+.setup-card h3 { font-size: 20px; font-weight: bold; color: #000; margin-bottom: 10px; flex-shrink: 0; }
+.setup-card p  { font-size: 17.5px; color: #000; line-height: 1.7; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>📄 产品说明 — A4 横版黑白打印工具</h1>
+  <p>分别点击两个图片区域上传产品图，完成后点击下载（输出：<strong>2970 × 2100 px，A4横版 @252 DPI</strong>）</p>
+  <button class="btn-dl" onclick="doDownload()">⬇ 下载高清图片</button>
+</div>
+
+<div class="scroll-wrap">
+<div id="preview">
+
+  <!-- ══════════ LEFT ══════════ -->
+  <div class="panel panel-left">
+    <div class="g-title">QUICK OPERATION GUIDE</div>
+    <div class="g-line"></div>
+
+    <div class="img-box" id="box1">
+      <input type="file" accept="image/*" onchange="loadImg(event,'box1')">
+      <div class="ph">
+        <span class="icon">🖼</span>
+        <p>点击上传床栏图片</p>
+      </div>
+    </div>
+
+    <!-- Both sections stretch to fill remaining panel height -->
+    <div class="left-body">
+
+      <div class="section-block">
+        <div class="badge">01. UNFOLD &amp; FOLD</div>
+        <div class="i-grid">
+          <div class="i-box">
+            <h3>Unfold:</h3>
+            <p>Open directly. It locks automatically.<br>
+              <span class="ul bd">No buttons required.</span></p>
+          </div>
+          <div class="i-box">
+            <h3>Fold:</h3>
+            <p>Find <span class="bd">Buttons [1]</span> under the fabric.<br>
+              <span class="bd">Press both at once</span> to unlock and fold.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <div class="badge">02. HEIGHT ADJUSTMENT</div>
+        <div class="i-grid">
+          <div class="i-box">
+            <h3>Unlock:</h3>
+            <p>Feel for <span class="bd">Slider [2]</span>.<br>
+              <span class="bd">Slide &amp; HOLD</span> it toward the center.</p>
+          </div>
+          <div class="i-box">
+            <h3>Adjust:</h3>
+            <p>Keep holding [2] while you move the tubes.<br>
+              <span class="ul bd">Release to lock.</span></p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /panel-left -->
+
+  <!-- ══════════ RIGHT ══════════ -->
+  <div class="panel panel-right">
+    <div class="g-title">SMART SENSOR LIGHT GUIDE</div>
+    <div class="g-line"></div>
+
+    <div class="img-box" id="box2">
+      <input type="file" accept="image/*" onchange="loadImg(event,'box2')">
+      <div class="ph">
+        <span class="icon">🖼</span>
+        <p>点击上传传感器灯图片</p>
+      </div>
+    </div>
+
+    <div class="modes-hd">OPERATION MODES</div>
+
+    <!-- Fills all remaining panel height -->
+    <div class="right-body">
+
+      <!-- 4 mode cards share column equally -->
+      <div class="col-modes">
+        <div class="mode-card">
+          <h3>1. Always-On Mode <span class="sub">(1st Press)</span></h3>
+          <p>Stays lit constantly. Perfect for reading or diaper changes.</p>
+        </div>
+        <div class="mode-card">
+          <h3>2. Night Sensor Mode <span class="sub">(2nd Press · Flash ×3)</span></h3>
+          <p><span class="bd">Smart Saving:</span> Only turns on when it is
+            <span class="bd ul">DARK</span> and <span class="bd">you approach it</span>.
+            Won't waste battery in daylight.</p>
+        </div>
+        <div class="mode-card">
+          <h3>3. All-Day Sensor Mode <span class="sub">(3rd Press · Flash ×2)</span></h3>
+          <p><span class="bd">Always Ready:</span> Turns on whenever
+            <span class="bd">you approach it</span>,
+            regardless of room brightness.</p>
+        </div>
+        <div class="mode-card">
+          <h3>4. Power OFF <span class="sub">(4th Press)</span></h3>
+          <p>Completely shuts down the light system.</p>
+        </div>
+      </div>
+
+      <!-- Specs fixed + setup grows -->
+      <div class="col-specs">
+        <div class="spec-card">
+          <h3>QUICK SPECS</h3>
+          <ul>
+            <li><span class="bd">Dimming:</span> Hold button while ON to adjust.</li>
+            <li><span class="bd">Indicators:</span> Red (Charging) / Off (Full).</li>
+            <li><span class="bd">Detection:</span> 120° Wide Angle, 3 m Range.</li>
+            <li class="em">⚠ First Use: Fully charge before first use!</li>
+          </ul>
+        </div>
+        <div class="setup-card">
+          <h3>EASY SETUP</h3>
+          <p>Just place the light inside the dedicated mesh pocket on the cover.
+            It will sense your approach through the mesh.</p>
+        </div>
+      </div>
+
+    </div><!-- /right-body -->
+  </div><!-- /panel-right -->
+
+</div><!-- /preview -->
+</div><!-- /scroll-wrap -->
+
+<script>
+function loadImg(e, boxId) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const box = document.getElementById(boxId);
+    const ph  = box.querySelector('.ph');
+    if (ph) ph.style.display = 'none';
+    let img = box.querySelector('img');
+    if (!img) { img = document.createElement('img'); box.appendChild(img); }
+    img.src = ev.target.result;
+    box.style.border     = '1px solid #ddd';
+    box.style.background = '#fff';
+  };
+  reader.readAsDataURL(file);
+}
+
+function doDownload() {
+  const el     = document.getElementById('preview');
+  const inputs = el.querySelectorAll('input[type="file"]');
+  inputs.forEach(i => i.style.display = 'none');
+
+  html2canvas(el, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    width: 1485,
+    height: 1050
+  }).then(canvas => {
+    inputs.forEach(i => i.style.display = '');
+    const a = document.createElement('a');
+    a.download = 'product-guide-A4-landscape.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  }).catch(err => {
+    inputs.forEach(i => i.style.display = '');
+    console.error(err);
+    alert('下载失败，请重试！');
+  });
+}
+</script>
+</body>
+</html>

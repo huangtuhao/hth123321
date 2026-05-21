@@ -1,0 +1,13 @@
+{
+  "price_short_threshold": "30",
+  "price_daily_threshold": "40",
+  "check_interval": "60",
+  "email_enabled": "false",
+  "email_host": "smtp.qq.com",
+  "email_port": "465",
+  "email_user": "",
+  "email_pass": "",
+  "email_to": "",
+  "feishu_enabled": "false",
+  "feishu_webhook": ""
+}

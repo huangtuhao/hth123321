@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Canvas 图片加背景工具</title>
+    <style>
+        body { font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f4f4f9; }
+        .controls { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .preview-container { max-width: 100%; overflow: auto; border: 1px dashed #ccc; padding: 10px; background: #eee; }
+        canvas { max-width: 100%; height: auto; display: block; }
+        button { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        .info { font-size: 14px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>图片填充背景色工具</h2>
+
+    <div class="controls">
+        <input type="file" id="upload" accept="image/*">
+        <label for="bgColor">选择背景色：</label>
+        <input type="color" id="bgColor" value="#ffffff">
+        <button id="downloadBtn" disabled>下载处理后的图片</button>
+        <div class="info" id="imgInfo">请上传图片...</div>
+    </div>
+
+    <div class="preview-container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        const upload = document.getElementById('upload');
+        const bgColorInput = document.getElementById('bgColor');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const imgInfo = document.getElementById('imgInfo');
+
+        let originalImage = null;
+        let fileType = 'image/png'; // 默认格式
+        let fileName = 'processed_image';
+
+        // 监听文件上传
+        upload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            fileType = file.type; // 获取原始文件格式
+            fileName = file.name.split('.')[0]; // 获取原始文件名
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    originalImage = img;
+                    draw(); // 加载后立即绘制
+                    downloadBtn.disabled = false;
+                    imgInfo.innerText = `原始尺寸: ${img.width} x ${img.height} | 格式: ${fileType}`;
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 监听颜色变化
+        bgColorInput.addEventListener('input', () => {
+            if (originalImage) draw();
+        });
+
+        // 核心绘制逻辑
+        function draw() {
+            const w = originalImage.width;
+            const h = originalImage.height;
+
+            // 1. 设置画布大小与图片完全一致（保证不改变像素大小）
+            canvas.width = w;
+            canvas.height = h;
+
+            // 2. 填充背景色
+            ctx.fillStyle = bgColorInput.value;
+            ctx.fillRect(0, 0, w, h);
+
+            // 3. 绘制原图（原图在上方，透明部分会露出背景色）
+            ctx.drawImage(originalImage, 0, 0, w, h);
+        }
+
+        // 下载逻辑
+        downloadBtn.addEventListener('click', () => {
+            if (!canvas) return;
+
+            // 使用原始的 MIME 类型导出，确保格式不变
+            // 注意：如果是导出为 jpeg，背景色必显；如果是 png，保持原质量
+            const dataURL = canvas.toDataURL(fileType, 1.0); 
+            
+            const link = document.createElement('a');
+            link.href = dataURL;
+            link.download = `${fileName}_bg${fileType.replace('image/', '.')}`;
+            link.click();
+        });
+    </script>
+</body>
+</html>

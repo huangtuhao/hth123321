@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片比例适配与四等分工具</title>
+    <style>
+        /* 基本样式和响应式设计 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #ffffff;
+            padding: 25px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 1rem;
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            margin-bottom: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .custom-file-upload {
+            border: 2px dashed #3498db;
+            display: inline-block;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            color: #3498db;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .custom-file-upload:hover {
+            background-color: #f0f8ff;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        #fileName {
+            margin-top: 10px;
+            color: #555;
+            font-style: italic;
+        }
+
+        #generateButton {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        #generateButton:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        #generateButton:not(:disabled):hover {
+            background-color: #27ae60;
+        }
+
+        #outputContainer {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .piece-container {
+            border: 1px solid #e0e0e0;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #fafafa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .piece-container canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 15px;
+            background-color: #3498db;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+
+        .download-link:hover {
+            background-color: #2980b9;
+        }
+        
+        #previewContainer {
+            margin-top: 20px;
+        }
+        
+        #previewImage {
+            max-width: 100%;
+            max-height: 300px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* 自定义弹窗样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px 30px;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 90%;
+            width: 320px;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.visible .modal-content {
+            transform: scale(1);
+        }
+        #modalMessage {
+            margin: 0 0 20px 0;
+            color: #333;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        #modalCloseButton {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100px;
+            transition: background-color 0.3s ease;
+        }
+        #modalCloseButton:hover {
+            background-color: #2980b9;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>图片比例适配与四等分工具</h1>
+        <p class="subtitle">将任意图片适配到166:182比例（自动填充白边），然后进行四等分。</p>
+
+        <div class="controls">
+            <label for="imageLoader" class="custom-file-upload">
+                选择图片
+            </label>
+            <input type="file" id="imageLoader" accept="image/*">
+            <span id="fileName">尚未选择文件</span>
+            
+            <div id="previewContainer" style="display:none;">
+                <p><strong>图片预览:</strong></p>
+                <img id="previewImage" src="" alt="Image preview"/>
+            </div>
+
+            <button id="generateButton" disabled>生成并分割</button>
+        </div>
+
+        <div id="outputContainer"></div>
+    </div>
+
+    <!-- 自定义弹窗的HTML结构 -->
+    <div id="customModal" class="modal-overlay">
+        <div class="modal-content">
+            <p id="modalMessage"></p>
+            <button id="modalCloseButton">好的</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 自定义弹窗逻辑 ---
+        const modalOverlay = document.getElementById('customModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalCloseButton = document.getElementById('modalCloseButton');
+
+        function showCustomAlert(message) {
+            modalMessage.textContent = message;
+            modalOverlay.classList.add('visible');
+        }
+
+        function hideCustomAlert() {
+            modalOverlay.classList.remove('visible');
+        }
+
+        modalCloseButton.addEventListener('click', hideCustomAlert);
+        modalOverlay.addEventListener('click', (event) => {
+            if (event.target === modalOverlay) {
+                hideCustomAlert();
+            }
+        });
+
+
+        // --- 主要应用逻辑 ---
+        const imageLoader = document.getElementById('imageLoader');
+        const generateButton = document.getElementById('generateButton');
+        const outputContainer = document.getElementById('outputContainer');
+        const fileNameSpan = document.getElementById('fileName');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+
+        let uploadedImage = null;
+
+        imageLoader.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file || !file.type.startsWith('image/')) {
+                showCustomAlert('请选择一个有效的图片文件。');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                uploadedImage = new Image();
+                uploadedImage.src = e.target.result;
+                uploadedImage.onload = () => {
+                    // --- 核心修改：移除了1:1比例验证 ---
+                    fileNameSpan.textContent = `已选择: ${file.name}`;
+                    previewImage.src = e.target.result;
+                    previewContainer.style.display = 'block';
+                    generateButton.disabled = false;
+                    outputContainer.innerHTML = '';
+                };
+                uploadedImage.onerror = () => {
+                    showCustomAlert('图片加载失败，请尝试其他图片。');
+                    generateButton.disabled = true;
+                    uploadedImage = null;
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+
+        generateButton.addEventListener('click', () => {
+            if (!uploadedImage) {
+                showCustomAlert('请先上传一张图片！');
+                return;
+            }
+
+            outputContainer.innerHTML = '';
+
+            // --- 核心修改部分：动态适配任意比例的图片 ---
+
+            const paddedCanvas = document.createElement('canvas');
+            const paddedCtx = paddedCanvas.getContext('2d');
+
+            const imgWidth = uploadedImage.width;
+            const imgHeight = uploadedImage.height;
+            const targetRatio = 166 / 182;
+            const imgRatio = imgWidth / imgHeight;
+
+            let paddedWidth, paddedHeight;
+            let drawX, drawY;
+
+            if (imgRatio > targetRatio) {
+                // 图片比目标 "更宽"，以图片宽度为基准，上下加白边
+                paddedWidth = imgWidth;
+                paddedHeight = Math.round(imgWidth / targetRatio);
+                drawX = 0;
+                drawY = (paddedHeight - imgHeight) / 2;
+            } else {
+                // 图片比目标 "更高" 或比例相同，以图片高度为基准，左右加白边
+                paddedHeight = imgHeight;
+                paddedWidth = Math.round(imgHeight * targetRatio);
+                drawX = (paddedWidth - imgWidth) / 2;
+                drawY = 0;
+            }
+
+            paddedCanvas.width = paddedWidth;
+            paddedCanvas.height = paddedHeight;
+
+            // 1. 用白色填充整个新画布
+            paddedCtx.fillStyle = '#FFFFFF';
+            paddedCtx.fillRect(0, 0, paddedWidth, paddedHeight);
+
+            // 2. 将原始图片绘制到新画布的中央位置
+            paddedCtx.drawImage(uploadedImage, drawX, drawY, imgWidth, imgHeight);
+            
+            // --- 核心修改部分结束 ---
+
+
+            // 后续分割操作基于这个适配好的 paddedCanvas，无需改动
+            const pieceWidth = Math.ceil(paddedWidth / 2);
+            const pieceHeight = Math.ceil(paddedHeight / 2);
+
+            for (let i = 0; i < 4; i++) {
+                const sx = (i % 2) * pieceWidth;
+                const sy = Math.floor(i / 2) * pieceHeight;
+
+                const pieceCanvas = document.createElement('canvas');
+                const pieceCtx = pieceCanvas.getContext('2d');
+
+                pieceCanvas.width = pieceWidth;
+                pieceCanvas.height = pieceHeight;
+
+                pieceCtx.drawImage(
+                    paddedCanvas,
+                    sx, sy, pieceWidth, pieceHeight,
+                    0, 0, pieceWidth, pieceHeight
+                );
+
+                const link = document.createElement('a');
+                link.href = pieceCanvas.toDataURL('image/png');
+                link.download = `分片_${i + 1}.png`;
+                link.textContent = `下载分片 ${i + 1}`;
+                link.className = 'download-link';
+
+                const pieceContainer = document.createElement('div');
+                pieceContainer.className = 'piece-container';
+                pieceContainer.appendChild(pieceCanvas);
+                pieceContainer.appendChild(link);
+
+                outputContainer.appendChild(pieceContainer);
+            }
+        });
+    </script>
+
+</body>
+</html>
