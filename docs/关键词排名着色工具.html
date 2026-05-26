@@ -15,16 +15,8 @@
     min-height: 100vh;
   }
   .container { max-width: 1600px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 22px; color: #1d1d2e; margin-bottom: 24px; letter-spacing: .5px; }
 
-  h1 {
-    text-align: center;
-    font-size: 22px;
-    color: #1d1d2e;
-    margin-bottom: 24px;
-    letter-spacing: .5px;
-  }
-
-  /* ── Upload ── */
   .upload-area {
     border: 2px dashed #4096ff;
     border-radius: 14px;
@@ -46,7 +38,6 @@
   .upload-area .u-sub  { font-size: 13px; color: #aaa; margin-top: 6px; }
   #file-input { display: none; }
 
-  /* ── Legend ── */
   .legend-card {
     background: white;
     border-radius: 12px;
@@ -63,7 +54,6 @@
   .legend-item  { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #444; }
   .legend-swatch { width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; }
 
-  /* ── Controls bar ── */
   .controls-bar {
     display: flex;
     justify-content: space-between;
@@ -92,7 +82,6 @@
   }
   .export-btn:disabled { background: #d9d9d9; color: #aaa; cursor: not-allowed; }
 
-  /* ── Table card ── */
   .table-card {
     background: white;
     border-radius: 12px;
@@ -122,6 +111,21 @@
   }
   tbody tr:hover td { filter: brightness(.95); }
 
+  .link-cell a {
+    color: #1677ff;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 2px 8px;
+    border: 1px solid #1677ff;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: all .15s;
+  }
+  .link-cell a:hover {
+    background: #1677ff;
+    color: white;
+  }
+
   .stats-bar {
     padding: 10px 16px;
     border-top: 1px solid #f0f0f0;
@@ -129,14 +133,11 @@
     color: #888;
     background: #fafafa;
     display: none;
+    line-height: 1.8;
   }
+  .stats-note { color: #fa8c16; font-weight: 500; }
 
-  /* ── Placeholder / Error ── */
-  .placeholder {
-    text-align: center;
-    padding: 80px 20px;
-    color: #bbb;
-  }
+  .placeholder { text-align: center; padding: 80px 20px; color: #bbb; }
   .placeholder .p-icon { font-size: 50px; margin-bottom: 12px; }
   .placeholder .p-text { font-size: 15px; }
 </style>
@@ -153,19 +154,16 @@
   </div>
   <input type="file" id="file-input" accept=".xlsx,.xls">
 
-  <!-- Legend -->
   <div class="legend-card">
     <div class="legend-title">周平均关键词排名 档位颜色：</div>
     <div class="legend-items" id="legend-items"></div>
   </div>
 
-  <!-- Controls -->
   <div class="controls-bar">
     <div class="file-label" id="file-label">尚未加载文件</div>
     <button class="export-btn" id="export-btn" disabled onclick="exportFile()">⬇ 导出着色表格（.xls）</button>
   </div>
 
-  <!-- Table -->
   <div class="table-card">
     <div class="table-scroll" id="table-scroll">
       <div class="placeholder">
@@ -178,15 +176,13 @@
 
 </div>
 <script>
-// ──────────────────────────────────────────────
-// Tier definitions
-// ──────────────────────────────────────────────
+// ── Tier definitions ──────────────────────────
 const TIERS = [
-  { label: '0 – 1万',         max: 10000,   bg: '#006400', color: '#fff' },
-  { label: '1万 – 5万',       max: 50000,   bg: '#52c41a', color: '#fff' },
-  { label: '5万 – 10万',      max: 100000,  bg: '#fadb14', color: '#333' },
-  { label: '10万 – 20万',     max: 200000,  bg: '#fa8c16', color: '#fff' },
-  { label: '20万 – 40万',     max: 400000,  bg: '#f5222d', color: '#fff' },
+  { label: '0 – 1万',         max: 10000,    bg: '#006400', color: '#fff' },
+  { label: '1万 – 5万',       max: 50000,    bg: '#52c41a', color: '#fff' },
+  { label: '5万 – 10万',      max: 100000,   bg: '#fadb14', color: '#333' },
+  { label: '10万 – 20万',     max: 200000,   bg: '#fa8c16', color: '#fff' },
+  { label: '20万 – 40万',     max: 400000,   bg: '#f5222d', color: '#fff' },
   { label: '40万以上 / 空值', max: Infinity, bg: '#531dab', color: '#fff' },
 ];
 
@@ -200,16 +196,22 @@ function getTier(val) {
   return TIERS[5];
 }
 
-// ──────────────────────────────────────────────
-// State
-// ──────────────────────────────────────────────
-let parsedData    = null;
-let rankColIndex  = -1;
-let currentBase   = 'output';
+function buildAmazonUrl(keyword) {
+  const k = String(keyword || '').trim();
+  if (!k) return 'https://www.amazon.com/s?k=';
+  return 'https://www.amazon.com/s?k=' + encodeURIComponent(k).replace(/%20/g, '+');
+}
 
-// ──────────────────────────────────────────────
-// Init legend
-// ──────────────────────────────────────────────
+// ── State ─────────────────────────────────────
+let parsedData       = null;  // { origHeaders, rows }
+let kwColIndex       = -1;    // keyword column index in original data
+let rankColIndex     = -1;    // rank column index in original data
+let currentBase      = 'output';
+
+const PREVIEW_LIMIT  = 100;
+const LINK_COL_HDR   = '亚马逊搜索链接';
+
+// ── Init legend ───────────────────────────────
 (function initLegend() {
   const wrap = document.getElementById('legend-items');
   TIERS.forEach(t => {
@@ -222,9 +224,7 @@ let currentBase   = 'output';
   });
 })();
 
-// ──────────────────────────────────────────────
-// Upload
-// ──────────────────────────────────────────────
+// ── Upload ────────────────────────────────────
 function triggerInput() { document.getElementById('file-input').click(); }
 
 const uploadArea = document.getElementById('upload-area');
@@ -243,24 +243,29 @@ document.getElementById('file-input').addEventListener('change', e => {
 function processFile(file) {
   currentBase = file.name.replace(/\.[^.]+$/, '');
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = ev => {
     try {
-      const wb   = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const raw  = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const wb  = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
       if (!raw || raw.length < 2) { showError('文件内容为空，请检查表格'); return; }
 
-      const headers = raw[0].map(String);
-      const rows    = raw.slice(1);
+      const origHeaders = raw[0].map(String);
+      const rows        = raw.slice(1);
 
-      rankColIndex = headers.findIndex(h => h.includes('周平均关键词排名'));
+      // Find keyword column (first col containing "关键词")
+      kwColIndex = origHeaders.findIndex(h => h.includes('关键词'));
+      if (kwColIndex === -1) kwColIndex = 0; // fallback to first col
+
+      // Find rank column
+      rankColIndex = origHeaders.findIndex(h => h.includes('周平均关键词排名'));
       if (rankColIndex === -1) {
         showError('未找到「周平均关键词排名」列，请确认表头名称是否正确');
         return;
       }
 
-      parsedData = { headers, rows };
+      parsedData = { origHeaders, rows };
       renderTable();
 
       document.getElementById('file-label').innerHTML = `已加载：<span>${file.name}</span>`;
@@ -282,27 +287,49 @@ function showError(msg) {
     </div>`;
 }
 
-// ──────────────────────────────────────────────
-// Render table
-// ──────────────────────────────────────────────
+// ── Build display headers (insert link col after kwCol) ──
+function getDisplayHeaders() {
+  const h = [...parsedData.origHeaders];
+  h.splice(kwColIndex + 1, 0, LINK_COL_HDR);
+  return h;
+}
+
+// Map display-column-index → original-column-index (or -1 for link col)
+function origIdx(dispIdx) {
+  const linkPos = kwColIndex + 1;
+  if (dispIdx === linkPos) return -1;          // link column
+  return dispIdx < linkPos ? dispIdx : dispIdx - 1;
+}
+
+// ── Render table (preview only) ───────────────
 function renderTable() {
-  const { headers, rows } = parsedData;
-  const counts = Array(TIERS.length).fill(0);
+  const { origHeaders, rows } = parsedData;
+  const displayHeaders = getDisplayHeaders();
+  const previewRows    = rows.slice(0, PREVIEW_LIMIT);
+  const linkPos        = kwColIndex + 1; // display index of link col
+  const rankDispIdx    = rankColIndex < linkPos ? rankColIndex : rankColIndex + 1;
 
   let html = '<table><thead><tr>';
-  headers.forEach(h => { html += `<th>${esc(h)}</th>`; });
+  displayHeaders.forEach(h => { html += `<th>${esc(h)}</th>`; });
   html += '</tr></thead><tbody>';
 
-  rows.forEach(row => {
+  previewRows.forEach(row => {
     html += '<tr>';
-    headers.forEach((_, i) => {
-      const val = row[i] ?? '';
-      if (i === rankColIndex) {
-        const tier = getTier(val);
-        counts[TIERS.indexOf(tier)]++;
-        html += `<td style="background:${tier.bg};color:${tier.color};font-weight:600;">${esc(String(val))}</td>`;
+    displayHeaders.forEach((_, di) => {
+      if (di === linkPos) {
+        // Link column
+        const kw  = row[kwColIndex] ?? '';
+        const url = buildAmazonUrl(kw);
+        html += `<td class="link-cell"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">链接</a></td>`;
       } else {
-        html += `<td>${esc(String(val))}</td>`;
+        const oi  = origIdx(di);
+        const val = row[oi] ?? '';
+        if (oi === rankColIndex) {
+          const tier = getTier(val);
+          html += `<td style="background:${tier.bg};color:${tier.color};font-weight:600;">${esc(String(val))}</td>`;
+        } else {
+          html += `<td>${esc(String(val))}</td>`;
+        }
       }
     });
     html += '</tr>';
@@ -311,18 +338,28 @@ function renderTable() {
   html += '</tbody></table>';
   document.getElementById('table-scroll').innerHTML = html;
 
-  const statsBar = document.getElementById('stats-bar');
-  const summary  = TIERS.map((t, i) => `${t.label}：${counts[i]} 条`).join('　|　');
-  statsBar.textContent = `共 ${rows.length} 条数据　|　${summary}`;
+  // Stats (count all rows)
+  const allCounts = Array(TIERS.length).fill(0);
+  rows.forEach(row => {
+    const tier = getTier(row[rankColIndex] ?? '');
+    allCounts[TIERS.indexOf(tier)]++;
+  });
+
+  const statsBar  = document.getElementById('stats-bar');
+  const noteHtml  = rows.length > PREVIEW_LIMIT
+    ? `　<span class="stats-note">（页面仅展示前 ${PREVIEW_LIMIT} 条，导出文件包含全部 ${rows.length} 条）</span>`
+    : '';
+  const summary   = TIERS.map((t, i) => `${t.label}：${allCounts[i]} 条`).join('　|　');
+  statsBar.innerHTML = `共 ${rows.length} 条数据${noteHtml}<br>${summary}`;
   statsBar.style.display = 'block';
 }
 
-// ──────────────────────────────────────────────
-// Export as Excel-HTML (.xls)
-// ──────────────────────────────────────────────
+// ── Export (.xls with clickable links) ────────
 function exportFile() {
   if (!parsedData) return;
-  const { headers, rows } = parsedData;
+  const { rows } = parsedData;
+  const displayHeaders = getDisplayHeaders();
+  const linkPos        = kwColIndex + 1;
 
   let html = '\uFEFF' + `<html xmlns:o="urn:schemas-microsoft-com:office:office"
 xmlns:x="urn:schemas-microsoft-com:office:excel"
@@ -338,22 +375,30 @@ xmlns="http://www.w3.org/TR/REC-html40">
 table{border-collapse:collapse;}
 th,td{font-family:Arial,"微软雅黑",sans-serif;font-size:11pt;border:1px solid #cccccc;padding:5px 10px;}
 th{background:#1d1d2e;color:white;font-weight:bold;}
+a{color:#1677ff;text-decoration:none;}
 </style>
 </head><body><table>`;
 
   html += '<thead><tr>';
-  headers.forEach(h => { html += `<th>${esc(h)}</th>`; });
+  displayHeaders.forEach(h => { html += `<th>${esc(h)}</th>`; });
   html += '</tr></thead><tbody>';
 
   rows.forEach(row => {
     html += '<tr>';
-    headers.forEach((_, i) => {
-      const val = row[i] ?? '';
-      if (i === rankColIndex) {
-        const tier = getTier(val);
-        html += `<td style="background-color:${tier.bg};color:${tier.color};font-weight:bold;">${esc(String(val))}</td>`;
+    displayHeaders.forEach((_, di) => {
+      if (di === linkPos) {
+        const kw  = row[kwColIndex] ?? '';
+        const url = buildAmazonUrl(kw);
+        html += `<td><a href="${esc(url)}">链接</a></td>`;
       } else {
-        html += `<td>${esc(String(val))}</td>`;
+        const oi  = origIdx(di);
+        const val = row[oi] ?? '';
+        if (oi === rankColIndex) {
+          const tier = getTier(val);
+          html += `<td style="background-color:${tier.bg};color:${tier.color};font-weight:bold;">${esc(String(val))}</td>`;
+        } else {
+          html += `<td>${esc(String(val))}</td>`;
+        }
       }
     });
     html += '</tr>';
@@ -371,15 +416,13 @@ th{background:#1d1d2e;color:white;font-weight:bold;}
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
 }
 
-// ──────────────────────────────────────────────
-// Utils
-// ──────────────────────────────────────────────
+// ── Utils ─────────────────────────────────────
 function esc(s) {
   return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 </script>
 </body>
