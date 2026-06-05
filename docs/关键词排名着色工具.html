@@ -155,7 +155,7 @@
   <input type="file" id="file-input" accept=".xlsx,.xls">
 
   <div class="legend-card">
-    <div class="legend-title">周平均关键词排名 档位颜色：</div>
+    <div class="legend-title">关键词排名 档位颜色：</div>
     <div class="legend-items" id="legend-items"></div>
   </div>
 
@@ -258,10 +258,10 @@ function processFile(file) {
       kwColIndex = origHeaders.findIndex(h => h.includes('关键词'));
       if (kwColIndex === -1) kwColIndex = 0; // fallback to first col
 
-      // Find rank column
-      rankColIndex = origHeaders.findIndex(h => h.includes('周平均关键词排名'));
+      // Find rank column (supports any header containing "关键词排名")
+      rankColIndex = origHeaders.findIndex(h => h.includes('关键词排名'));
       if (rankColIndex === -1) {
-        showError('未找到「周平均关键词排名」列，请确认表头名称是否正确');
+        showError('未找到包含「关键词排名」的列，请确认表头名称是否正确');
         return;
       }
 
@@ -365,12 +365,6 @@ function exportFile() {
 xmlns:x="urn:schemas-microsoft-com:office:excel"
 xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="UTF-8">
-<!--[if gte mso 9]><xml>
-<x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
-<x:Name>Sheet1</x:Name>
-<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
-</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook>
-</xml><![endif]-->
 <style>
 table{border-collapse:collapse;}
 th,td{font-family:Arial,"微软雅黑",sans-serif;font-size:11pt;border:1px solid #cccccc;padding:5px 10px;}

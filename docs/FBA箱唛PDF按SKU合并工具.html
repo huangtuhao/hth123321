@@ -3,145 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FBA箱唛PDF按SKU合并工具 (v2.2 - 动态SKU)</title>
+    <title>FBA箱唛PDF按SKU合并工具 (v2.3 - 支持内部SKU映射)</title>
     
-    <!-- 引入必要的JS库 -->
-    <!-- 1. pdf.js for reading PDF content -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
     </script>
-    <!-- 2. pdf-lib.js for creating/merging PDF documents -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <!-- 3. JSZip.js for creating zip files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f0f2f5;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-        .container {
-            max-width: 900px;
-            width: 100%;
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #1a73e8;
-            margin-top: 0;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #e0e0e0;
-            padding-bottom: 15px;
-        }
-        .section {
-            margin-bottom: 25px;
-        }
-        .section h3 {
-            margin-top: 0;
-            color: #5f6368;
-            font-size: 1.1em;
-        }
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        .label-note {
-            font-weight: 400;
-            font-size: 0.9em;
-            color: #e91e63;
-        }
-        input[type="file"], textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-size: 1em;
-        }
-        input[type="file"] {
-            padding: 5px;
-        }
-        textarea {
-            resize: vertical;
-            min-height: 150px;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-        }
-        .action-btn {
-            display: block;
-            width: 100%;
-            padding: 12px 20px;
-            margin-top: 10px;
-            font-size: 1.2em;
-            font-weight: bold;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        #process-btn {
-            background-color: #1a73e8;
-        }
-        #process-btn:hover:not(:disabled) {
-            background-color: #185abc;
-        }
-        #download-all-btn {
-            background-color: #28a745;
-        }
-        #download-all-btn:hover:not(:disabled) {
-            background-color: #218838;
-        }
-        .action-btn:disabled {
-            background-color: #9e9e9e;
-            cursor: not-allowed;
-        }
-        #status-container, #results-container {
-            margin-top: 30px;
-            border-top: 1px solid #e0e0e0;
-            padding-top: 20px;
-        }
-        #status-log {
-            background-color: #f8f9fa;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 15px;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            font-size: 0.9em;
-            color: #3c4043;
-        }
-        #download-links a {
-            display: block;
-            background-color: #e8f0fe;
-            color: #1967d2;
-            padding: 10px 15px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            text-decoration: none;
-            font-weight: 500;
-            transition: background-color 0.3s;
-        }
-        #download-links a:hover {
-            background-color: #d2e3fc;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { max-width: 900px; width: 100%; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a73e8; margin-top: 0; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 15px; }
+        .section { margin-bottom: 25px; }
+        .section h3 { margin-top: 0; color: #5f6368; font-size: 1.1em; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .label-note { font-weight: 400; font-size: 0.9em; color: #e91e63; }
+        input[type="file"], textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 1em; }
+        input[type="file"] { padding: 5px; }
+        textarea { resize: vertical; min-height: 150px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; }
+        .action-btn { display: block; width: 100%; padding: 12px 20px; margin-top: 10px; font-size: 1.2em; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; }
+        #process-btn { background-color: #1a73e8; }
+        #process-btn:hover:not(:disabled) { background-color: #185abc; }
+        #download-all-btn { background-color: #28a745; }
+        #download-all-btn:hover:not(:disabled) { background-color: #218838; }
+        .action-btn:disabled { background-color: #9e9e9e; cursor: not-allowed; }
+        #status-container, #results-container { margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+        #status-log { background-color: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 15px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 0.9em; color: #3c4043; }
+        #download-links a { display: block; background-color: #e8f0fe; color: #1967d2; padding: 10px 15px; margin-bottom: 8px; border-radius: 4px; text-decoration: none; font-weight: 500; transition: background-color 0.3s; }
+        #download-links a:hover { background-color: #d2e3fc; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>FBA箱唛PDF按SKU合并工具 (v2.2 - 动态SKU)</h1>
+        <h1>FBA箱唛PDF按SKU合并工具 (v2.3 - 支持内部SKU映射)</h1>
 
         <div class="section">
             <label for="pdf-files">第一步：选择一个或多个FBA箱唛PDF文件</label>
@@ -149,13 +45,9 @@
         </div>
 
         <div class="section">
-            <label for="mapping-text">第二步：粘贴SKU与产品名称的映射 <span class="label-note">(必需项)</span></label>
-            <textarea id="mapping-text" placeholder="每行一个映射，格式为：SKU<空格或Tab>产品名称&#10;程序将根据这里提供的SKU列表来识别PDF中的标签。&#10;例如：&#10;SKU-ABC-001	我的产品A&#10;XYZ-987	我的产品B">TOY10006	感官瓷砖-数字款-套装1(1-10)
-TOY10007	感官瓷砖-数字款-套装2(1-6)
-TOY10009	感官瓷砖-方形款-套装1(4片)
-TOY10010	感官瓷砖-方形款-套装2(6片)
-TOY10011	感官瓷砖-六边形款-套装1(6片)
-TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
+            <label for="mapping-text">第二步：粘贴 MSKU、内部SKU 与 产品名称 的映射 <span class="label-note">(必需项)</span></label>
+            <textarea id="mapping-text" placeholder="每行一个映射，格式为：MSKU(亚马逊的)<空格或Tab>内部SKU<空格或Tab>产品名称&#10;程序将在PDF中搜索【MSKU】，但使用【内部SKU】来命名文件。&#10;例如：&#10;AMZ-TOY-001	TOY10006	感官瓷砖-数字款&#10;AMZ-TOY-002	TOY10007	感官瓷砖-字母款">AMZ-MSKU-001	TOY10006	感官瓷砖-数字款-套装1(1-10)
+AMZ-MSKU-002	TOY10007	感官瓷砖-数字款-套装2(1-6)</textarea>
         </div>
 
         <button id="process-btn" class="action-btn">第三步：开始处理并生成PDF</button>
@@ -190,27 +82,35 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
             statusLog.scrollTop = statusLog.scrollHeight;
         }
 
-        // *** 重要更新：解析映射，同时返回名称映射和SKU列表 ***
+        // *** v2.3 更新：解析三列映射，返回包含内部SKU的字典 ***
         function parseMapping() {
-            const nameMap = {};
-            const skuList = [];
+            const mappingData = {};
+            const mskuList = [];
             const lines = mappingTextInput.value.trim().split('\n');
+            
             for (const line of lines) {
                 if (line.trim() === '') continue; // 跳过空行
                 const parts = line.split(/\s+/); // 用一个或多个空白字符分割
-                if (parts.length >= 1) { // 至少要有一个SKU
-                    const sku = parts[0];
-                    const name = parts.length > 1 ? parts.slice(1).join(' ') : '未知产品';
-                    nameMap[sku] = name;
-                    skuList.push(sku);
+                
+                if (parts.length >= 2) { 
+                    // 至少提供了两列：MSKU 和 内部SKU
+                    const msku = parts[0];
+                    const internalSku = parts[1];
+                    const name = parts.length > 2 ? parts.slice(2).join(' ') : '未知产品';
+                    mappingData[msku] = { internalSku: internalSku, name: name };
+                    mskuList.push(msku);
+                } else if (parts.length === 1) {
+                    // 兼容旧格式（只填了一列），自动把内部SKU也设为这个值
+                    const msku = parts[0];
+                    mappingData[msku] = { internalSku: msku, name: '未知产品' };
+                    mskuList.push(msku);
                 }
             }
-            // 按长度降序排序SKU列表，防止部分匹配问题 (例如 "SKU-10" 不会被 "SKU-1" 错误匹配)
-            skuList.sort((a, b) => b.length - a.length);
-            return { nameMap, skuList };
+            // 按长度降序排序 MSKU 列表，防止部分匹配问题
+            mskuList.sort((a, b) => b.length - a.length);
+            return { mappingData, mskuList };
         }
         
-        // 辅助函数：转义正则特殊字符
         function escapeRegex(string) {
             return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
@@ -222,9 +122,9 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                 return;
             }
 
-            const { nameMap, skuList } = parseMapping();
-            if (skuList.length === 0) {
-                alert('请在第二步的文本框中提供至少一个有效的SKU映射！');
+            const { mappingData, mskuList } = parseMapping();
+            if (mskuList.length === 0) {
+                alert('请在第二步的文本框中提供至少一个有效的映射！');
                 return;
             }
 
@@ -239,9 +139,9 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
 
             try {
                 log('处理开始...');
-                log(`已加载 ${skuList.length} 个SKU用于识别: ${skuList.join(', ')}`);
+                log(`已加载 ${mskuList.length} 个亚马逊 MSKU 用于识别: ${mskuList.join(', ')}`);
 
-                const pageIndexBySku = {};
+                const pageIndexByMsku = {};
                 const loadedPdfLibDocs = {};
 
                 log('\n===== 阶段 1: 正在索引所有PDF页面... =====');
@@ -257,39 +157,43 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                         const textContent = await page.getTextContent();
                         const pageText = textContent.items.map(item => item.str).join(' ');
 
-                        // *** 重要更新：使用SKU列表进行动态匹配 ***
-                        let foundSku = null;
-                        for (const sku of skuList) {
-                            // 使用带单词边界的正则进行全词匹配
-                            const skuRegex = new RegExp(`\\b${escapeRegex(sku)}\\b`);
-                            if (skuRegex.test(pageText)) {
-                                foundSku = sku;
-                                break; // 找到即跳出循环
+                        let foundMsku = null;
+                        for (const msku of mskuList) {
+                            const mskuRegex = new RegExp(`\\b${escapeRegex(msku)}\\b`);
+                            if (mskuRegex.test(pageText)) {
+                                foundMsku = msku;
+                                break; 
                             }
                         }
 
-                        if (foundSku) {
-                            log(`  - 第 ${i} 页 -> 找到 SKU: ${foundSku}`);
-                            if (!pageIndexBySku[foundSku]) pageIndexBySku[foundSku] = [];
-                            pageIndexBySku[foundSku].push({ fileName: file.name, pageNum: i });
+                        if (foundMsku) {
+                            log(`  - 第 ${i} 页 -> 找到 MSKU: ${foundMsku}`);
+                            if (!pageIndexByMsku[foundMsku]) pageIndexByMsku[foundMsku] = [];
+                            pageIndexByMsku[foundMsku].push({ fileName: file.name, pageNum: i });
                         } else {
-                            log(`  - 警告: 在文件 ${file.name} 的第 ${i} 页未找到映射列表中的任何SKU。`);
+                            log(`  - 警告: 在文件 ${file.name} 的第 ${i} 页未找到映射列表中的任何 MSKU。`);
                         }
                     }
                 }
 
                 log('\n===== 阶段 2: 正在生成新的PDF文件... =====');
-                if (Object.keys(pageIndexBySku).length === 0) {
-                    log('错误：在所有文件中均未找到映射列表中的任何SKU。');
-                    throw new Error("未找到有效SKU，处理中止。");
+                if (Object.keys(pageIndexByMsku).length === 0) {
+                    log('错误：在所有文件中均未找到映射列表中的任何 MSKU。');
+                    throw new Error("未找到有效标签，处理中止。");
                 }
                 
                 resultsContainer.style.display = 'block';
 
-                for (const sku in pageIndexBySku) {
-                    const pagesToCopy = pageIndexBySku[sku];
+                for (const msku in pageIndexByMsku) {
+                    const pagesToCopy = pageIndexByMsku[msku];
                     const boxCount = pagesToCopy.length;
-                    log(`\n为 SKU: ${sku} 创建PDF... (共 ${boxCount} 页)`);
+                    
+                    // 获取对应的内部SKU和产品名称，用于命名
+                    const itemData = mappingData[msku] || { internalSku: msku, name: '未知产品' };
+                    const internalSku = itemData.internalSku;
+                    const productName = itemData.name;
+                    
+                    log(`\n为 MSKU: ${msku} (对应内部SKU: ${internalSku}) 创建PDF... (共 ${boxCount} 页)`);
 
                     const newPdfDoc = await PDFLib.PDFDocument.create();
 
@@ -302,8 +206,8 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                     const pdfBytes = await newPdfDoc.save();
                     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                     
-                    const productName = nameMap[sku] || '未知产品';
-                    const fileName = `${sku} - ${productName} - ${boxCount}箱.pdf`;
+                    // *** 核心修改：使用内部SKU来拼接文件名 ***
+                    const fileName = `${internalSku} - ${productName} - ${boxCount}箱.pdf`;
 
                     generatedFiles.push({ name: fileName, blob: blob });
 
@@ -352,9 +256,7 @@ TOY10012	感官瓷砖-拼图数字款-套装1(1-6)</textarea>
                 const zipBlob = await zip.generateAsync({
                     type: "blob",
                     compression: "DEFLATE",
-                    compressionOptions: {
-                        level: 9
-                    }
+                    compressionOptions: { level: 9 }
                 });
                 
                 const link = document.createElement('a');

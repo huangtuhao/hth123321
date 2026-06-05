@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBA预计到货时间匹配工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f7f9fc; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #2c3e50; }
+        .step { margin-bottom: 25px; padding: 15px; border-left: 4px solid #3498db; background-color: #fdfdfe; }
+        .step label { font-weight: bold; display: block; margin-bottom: 10px; color: #2980b9; }
+        input[type="file"] { display: block; width: 100%; padding: 8px; border: 1px dashed #bdc3c7; border-radius: 4px; cursor: pointer; }
+        .btn-group { text-align: center; margin-top: 20px; }
+        button { padding: 12px 24px; font-size: 16px; font-weight: bold; color: white; background-color: #3498db; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        #downloadBtn { background-color: #27ae60; display: none; margin-left: 10px; }
+        #downloadBtn:hover { background-color: #219150; }
+        #log { margin-top: 20px; padding: 15px; background: #eee; border-radius: 5px; font-size: 14px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📦 FBA预计到货时间匹配工具</h2>
+    
+    <div class="step">
+        <label>步骤 1：上传 FBA货件表格 (支持 .csv 或 .xlsx)</label>
+        <input type="file" id="fbaFile" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+    </div>
+
+    <div class="step">
+        <label>步骤 2：上传 产品初期管理表格 (支持 .csv 或 .xlsx)</label>
+        <input type="file" id="productFile" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+    </div>
+
+    <div class="btn-group">
+        <button id="processBtn" onclick="processData()">处理数据</button>
+        <button id="downloadBtn" onclick="downloadExcel()">下载更新后的表格</button>
+    </div>
+
+    <div id="log">准备就绪。请按顺序上传文件并点击“处理数据”...</div>
+</div>
+
+<script>
+    let finalWorkbook = null;
+
+    // 辅助函数：将文件读取为 JSON 数组
+    function readExcelToJSON(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // 读取文件，将日期格式化为统一标准
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const json = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
+                    resolve(json);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            reader.onerror = (error) => reject(error);
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    function logMessage(msg) {
+        const logEl = document.getElementById('log');
+        logEl.innerHTML += `\n${msg}`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function processData() {
+        const fbaFileInput = document.getElementById('fbaFile').files[0];
+        const productFileInput = document.getElementById('productFile').files[0];
+
+        if (!fbaFileInput || !productFileInput) {
+            alert('请先上传 FBA货件表格 和 产品初期管理表格！');
+            return;
+        }
+
+        document.getElementById('log').innerHTML = '开始处理数据...';
+        document.getElementById('downloadBtn').style.display = 'none';
+
+        try {
+            logMessage('1. 正在解析 FBA货件表格...');
+            const fbaData = await readExcelToJSON(fbaFileInput);
+            
+            // 字典：记录每个SKU的最早到货时间
+            const skuArrivalMap = {}; 
+
+            fbaData.forEach(row => {
+                const sku = String(row['SKU'] || '').trim();
+                const startStr = row['送达时段(开始时间)'];
+                const endStr = row['送达时段(结束时间)'];
+
+                if (sku && startStr && endStr) {
+                    const startDate = new Date(startStr);
+                    const endDate = new Date(endStr);
+
+                    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                        // 计算中间日期 (向下取整)
+                        const diffTime = endDate.getTime() - startDate.getTime();
+                        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        const halfDays = Math.floor(diffDays / 2); // 向下取整
+                        
+                        const midDate = new Date(startDate.getTime());
+                        midDate.setDate(midDate.getDate() + halfDays);
+
+                        // 取时间最短的 (即日期最早的)
+                        if (!skuArrivalMap[sku] || midDate.getTime() < skuArrivalMap[sku].getTime()) {
+                            skuArrivalMap[sku] = midDate;
+                        }
+                    }
+                }
+            });
+
+            logMessage(`✅ FBA数据解析完成，共提取了 ${Object.keys(skuArrivalMap).length} 个有货件时间记录的唯一SKU。`);
+
+            logMessage('2. 正在匹配 产品初期管理表格...');
+            const productData = await readExcelToJSON(productFileInput);
+            let matchCount = 0;
+
+            const updatedProductData = productData.map(row => {
+                const sku = String(row['SKU'] || '').trim();
+                if (sku && skuArrivalMap[sku]) {
+                    // 格式化日期为 YYYY-MM-DD
+                    const dateObj = skuArrivalMap[sku];
+                    const yyyy = dateObj.getFullYear();
+                    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const dd = String(dateObj.getDate()).padStart(2, '0');
+                    
+                    row['预计到货日期'] = `${yyyy}-${mm}-${dd}`;
+                    matchCount++;
+                }
+                return row;
+            });
+
+            logMessage(`✅ 匹配完成！共成功匹配并填写了 ${matchCount} 条数据的预计到货时间。`);
+
+            // 将更新后的数据生成新的 Excel Workbook
+            const newSheet = XLSX.utils.json_to_sheet(updatedProductData);
+            finalWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(finalWorkbook, newSheet, "Sheet1");
+
+            document.getElementById('downloadBtn').style.display = 'inline-block';
+            logMessage('🎉 处理成功！请点击右侧绿色按钮下载更新后的表格。');
+
+        } catch (error) {
+            console.error(error);
+            logMessage(`❌ 发生错误：${error.message}\n请检查表格表头是否完全匹配，或者数据是否存在异常。`);
+        }
+    }
+
+    function downloadExcel() {
+        if (!finalWorkbook) return;
+        // 导出 XLSX 文件
+        XLSX.writeFile(finalWorkbook, "更新后_产品初期管理.xlsx");
+    }
+</script>
+
+</body>
+</html>
