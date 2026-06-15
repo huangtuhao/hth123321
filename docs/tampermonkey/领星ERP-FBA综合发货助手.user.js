@@ -29,6 +29,7 @@
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/%E4%BA%91%E5%86%A0%20%E5%8F%91%E7%A5%A8%20-%20%E6%B8%A0%E9%81%93.xlsx",
       },
     ],
+    DEFAULT_BRAND_OPTIONS: ['PlentiVive', 'PicoPandax'],
     STORAGE_KEY: "LX_INVOICE_HELPER_DATA_V1",
     USER_TEMPLATE_KEY: "LX_USER_TEMPLATE_V3_8",
     BUILT_IN_CACHE_KEY: "LX_BUILT_IN_CACHE_V4_3",
