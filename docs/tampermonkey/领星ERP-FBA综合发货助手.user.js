@@ -21,12 +21,16 @@
   const CONFIG = {
     BUILT_IN_TEMPLATES: [
       {
-        name: "云冠清关发票模板-合并箱子.xlsx",
-        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/%E4%BA%91%E5%86%A0%20%E5%8F%91%E7%A5%A8%20-%20%E6%B8%A0%E9%81%93%20-%20%E5%90%88%E5%B9%B6%E7%AE%B1%E5%AD%90.xlsx",
+        name: "云冠清关发票模板.xlsx",
+        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/云冠清关发票模板.xlsx",
       },
       {
-        name: "云冠清关发票模板.xlsx",
-        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/%E4%BA%91%E5%86%A0%20%E5%8F%91%E7%A5%A8%20-%20%E6%B8%A0%E9%81%93.xlsx",
+        name: "佰通清关发票模板.xlsx",
+        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/佰通清关发票模板.xlsx",
+      },
+      {
+        name: "良逊清关发票模板.xlsx",
+        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/良逊清关发票模板.xlsx",
       },
     ],
     DEFAULT_BRAND_OPTIONS: ['PlentiVive', 'PicoPandax'],
@@ -638,12 +642,16 @@
       const batchBtn = (field) =>
         `<br><a href="javascript:void(0)" class="lx-batch-btn" data-batch="${field}" style="font-size:12px; font-weight:normal; color:#409EFF; text-decoration:none; display:inline-block; margin-top:4px;">[批量修改]</a>`;
 
+      // 新增：提取 CONFIG 中的品牌配置，生成下拉框 HTML
+      const brandOptionsHtml = CONFIG.DEFAULT_BRAND_OPTIONS.map(b => `<option value="${b}">${b}</option>`).join('');
+      const brandBatchSelect = `<br><select id="lx-batch-brand" style="margin-top:4px; padding:2px 4px; font-size:12px; border:1px solid #409EFF; border-radius:3px; color:#409EFF; outline:none; cursor:pointer; background: transparent;"><option value="" disabled selected>[批量选择]</option>${brandOptionsHtml}</select>`;
+
       const html = `<div style="max-height:55vh;overflow:auto;"><table class="lx-input-table">
                 <thead><tr>
                     <th style="vertical-align: top;">FBA</th><th style="vertical-align: top;">SKU</th><th style="vertical-align: top;">品名</th>
                     <th style="vertical-align: top;">HSCODE${batchBtn("hscode")}</th><th style="vertical-align: top;">单价($)${batchBtn("price")}</th>
                     <th style="vertical-align: top;">材质${batchBtn("material")}</th><th style="vertical-align: top;">用途${batchBtn("usage")}</th>
-                    <th style="vertical-align: top;">品牌${batchBtn("brand")}</th><th style="vertical-align: top;">型号${batchBtn("model")}</th>
+                    <th style="vertical-align: top;">品牌${brandBatchSelect}</th><th style="vertical-align: top;">型号${batchBtn("model")}</th>
                 </tr></thead><tbody>${rows}</tbody></table></div>`;
 
       const footer = `<button id="lx-cfm-cancel" class="lx-modal-btn lx-modal-btn-secondary">取消</button><button id="lx-cfm-go" class="lx-modal-btn lx-modal-btn-success">💾 保存并生成 Excel</button>`;
@@ -673,6 +681,21 @@
             }
           };
         });
+
+        // 新增：品牌下拉框的批量应用事件
+        const brandSelect = modal.querySelector("#lx-batch-brand");
+        if (brandSelect) {
+            brandSelect.onchange = (e) => {
+                const newVal = e.target.value;
+                if (newVal) {
+                    // 覆盖所有品牌输入框
+                    modal.querySelectorAll('input[data-f="brand"]').forEach(input => input.value = newVal);
+                    UI.notify.success(`已将【品牌】批量修改为: ${newVal}`);
+                    // 自动重置回默认的 "[批量选择]" 状态，方便下次重选
+                    e.target.value = ""; 
+                }
+            };
+        }
 
         document.getElementById("lx-cfm-cancel").onclick = () => {
           UI.hideModal("lx-cfm-modal");
