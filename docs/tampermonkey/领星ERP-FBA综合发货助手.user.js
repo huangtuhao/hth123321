@@ -29,7 +29,7 @@
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/佰通清关发票模板.xlsx",
       },
       {
-        name: "良逊清关发票模板.xlsx",
+        name: "良逊清关发票模板.xls",
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/良逊清关发票模板.xls",
       },
     ],
