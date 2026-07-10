@@ -60,10 +60,31 @@
     align-items: center;
     margin-bottom: 12px;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 15px;
   }
-  .file-label { font-size: 14px; color: #666; }
+  .file-label { font-size: 14px; color: #666; flex-grow: 1; }
   .file-label span { font-weight: 600; color: #1677ff; }
+
+  /* 新增 ASIN 输入框样式 */
+  .asin-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .asin-label { font-size: 13px; font-weight: 600; color: #555; }
+  .asin-input {
+    padding: 8px 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    font-size: 13px;
+    width: 180px;
+    outline: none;
+    transition: all .2s;
+  }
+  .asin-input:focus {
+    border-color: #1677ff;
+    box-shadow: 0 0 0 2px rgba(22,119,255,.2);
+  }
 
   .export-btn {
     background: #1677ff;
@@ -121,8 +142,16 @@
     font-size: 12px;
     transition: all .15s;
   }
+  .link-cell a.index-link {
+    color: #52c41a;
+    border-color: #52c41a;
+  }
   .link-cell a:hover {
     background: #1677ff;
+    color: white;
+  }
+  .link-cell a.index-link:hover {
+    background: #52c41a;
     color: white;
   }
 
@@ -161,6 +190,12 @@
 
   <div class="controls-bar">
     <div class="file-label" id="file-label">尚未加载文件</div>
+    
+    <div class="asin-box">
+      <span class="asin-label">产品 ASIN:</span>
+      <input type="text" id="asin-input" class="asin-input" placeholder="输入 ASIN 查收录 (选填)">
+    </div>
+
     <button class="export-btn" id="export-btn" disabled onclick="exportFile()">⬇ 导出着色表格（.xls）</button>
   </div>
 
@@ -202,6 +237,15 @@ function buildAmazonUrl(keyword) {
   return 'https://www.amazon.com/s?k=' + encodeURIComponent(k).replace(/%20/g, '+');
 }
 
+// 新增：构建收录查询 URL (关键词 + ASIN)
+function buildIndexUrl(keyword, asin) {
+  const k = String(keyword || '').trim();
+  const a = String(asin || '').trim();
+  if (!k && !a) return 'https://www.amazon.com/s?k=';
+  const query = [k, a].filter(Boolean).join('+');
+  return 'https://www.amazon.com/s?k=' + encodeURIComponent(query);
+}
+
 // ── State ─────────────────────────────────────
 let parsedData       = null;  // { origHeaders, rows }
 let kwColIndex       = -1;    // keyword column index in original data
@@ -209,7 +253,13 @@ let rankColIndex     = -1;    // rank column index in original data
 let currentBase      = 'output';
 
 const PREVIEW_LIMIT  = 100;
-const LINK_COL_HDR   = '亚马逊搜索链接';
+const LINK_COL_HDR   = '搜索链接';
+const INDEX_COL_HDR  = '收录查询链接'; // 新增列名
+
+// 监听 ASIN 输入框变化，实时更新表格
+document.getElementById('asin-input').addEventListener('input', () => {
+  if (parsedData) renderTable();
+});
 
 // ── Init legend ───────────────────────────────
 (function initLegend() {
@@ -254,11 +304,9 @@ function processFile(file) {
       const origHeaders = raw[0].map(String);
       const rows        = raw.slice(1);
 
-      // Find keyword column (first col containing "关键词")
       kwColIndex = origHeaders.findIndex(h => h.includes('关键词'));
-      if (kwColIndex === -1) kwColIndex = 0; // fallback to first col
+      if (kwColIndex === -1) kwColIndex = 0; 
 
-      // Find rank column (supports any header containing "关键词排名")
       rankColIndex = origHeaders.findIndex(h => h.includes('关键词排名'));
       if (rankColIndex === -1) {
         showError('未找到包含「关键词排名」的列，请确认表头名称是否正确');
@@ -287,18 +335,19 @@ function showError(msg) {
     </div>`;
 }
 
-// ── Build display headers (insert link col after kwCol) ──
+// ── Build display headers (insert 2 link cols after kwCol) ──
 function getDisplayHeaders() {
   const h = [...parsedData.origHeaders];
-  h.splice(kwColIndex + 1, 0, LINK_COL_HDR);
+  h.splice(kwColIndex + 1, 0, LINK_COL_HDR, INDEX_COL_HDR);
   return h;
 }
 
-// Map display-column-index → original-column-index (or -1 for link col)
+// Map display-column-index → original-column-index
 function origIdx(dispIdx) {
   const linkPos = kwColIndex + 1;
-  if (dispIdx === linkPos) return -1;          // link column
-  return dispIdx < linkPos ? dispIdx : dispIdx - 1;
+  const indexPos = kwColIndex + 2;
+  if (dispIdx === linkPos || dispIdx === indexPos) return -1; // generated columns
+  return dispIdx < linkPos ? dispIdx : dispIdx - 2; // offset by 2 now
 }
 
 // ── Render table (preview only) ───────────────
@@ -306,8 +355,9 @@ function renderTable() {
   const { origHeaders, rows } = parsedData;
   const displayHeaders = getDisplayHeaders();
   const previewRows    = rows.slice(0, PREVIEW_LIMIT);
-  const linkPos        = kwColIndex + 1; // display index of link col
-  const rankDispIdx    = rankColIndex < linkPos ? rankColIndex : rankColIndex + 1;
+  const linkPos        = kwColIndex + 1; 
+  const indexPos       = kwColIndex + 2; 
+  const asinVal        = document.getElementById('asin-input').value.trim();
 
   let html = '<table><thead><tr>';
   displayHeaders.forEach(h => { html += `<th>${esc(h)}</th>`; });
@@ -317,10 +367,15 @@ function renderTable() {
     html += '<tr>';
     displayHeaders.forEach((_, di) => {
       if (di === linkPos) {
-        // Link column
+        // 第一列：搜索链接
         const kw  = row[kwColIndex] ?? '';
         const url = buildAmazonUrl(kw);
-        html += `<td class="link-cell"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">链接</a></td>`;
+        html += `<td class="link-cell"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">搜索</a></td>`;
+      } else if (di === indexPos) {
+        // 第二列：收录查询链接 (带ASIN)
+        const kw  = row[kwColIndex] ?? '';
+        const url = buildIndexUrl(kw, asinVal);
+        html += `<td class="link-cell"><a href="${esc(url)}" class="index-link" target="_blank" rel="noopener noreferrer">查收录</a></td>`;
       } else {
         const oi  = origIdx(di);
         const val = row[oi] ?? '';
@@ -338,7 +393,7 @@ function renderTable() {
   html += '</tbody></table>';
   document.getElementById('table-scroll').innerHTML = html;
 
-  // Stats (count all rows)
+  // Stats
   const allCounts = Array(TIERS.length).fill(0);
   rows.forEach(row => {
     const tier = getTier(row[rankColIndex] ?? '');
@@ -347,9 +402,9 @@ function renderTable() {
 
   const statsBar  = document.getElementById('stats-bar');
   const noteHtml  = rows.length > PREVIEW_LIMIT
-    ? `　<span class="stats-note">（页面仅展示前 ${PREVIEW_LIMIT} 条，导出文件包含全部 ${rows.length} 条）</span>`
+    ? ` <span class="stats-note">（页面仅展示前 ${PREVIEW_LIMIT} 条，导出文件包含全部 ${rows.length} 条）</span>`
     : '';
-  const summary   = TIERS.map((t, i) => `${t.label}：${allCounts[i]} 条`).join('　|　');
+  const summary   = TIERS.map((t, i) => `${t.label}：${allCounts[i]} 条`).join(' | ');
   statsBar.innerHTML = `共 ${rows.length} 条数据${noteHtml}<br>${summary}`;
   statsBar.style.display = 'block';
 }
@@ -360,6 +415,8 @@ function exportFile() {
   const { rows } = parsedData;
   const displayHeaders = getDisplayHeaders();
   const linkPos        = kwColIndex + 1;
+  const indexPos       = kwColIndex + 2;
+  const asinVal        = document.getElementById('asin-input').value.trim();
 
   let html = '\uFEFF' + `<html xmlns:o="urn:schemas-microsoft-com:office:office"
 xmlns:x="urn:schemas-microsoft-com:office:excel"
@@ -370,6 +427,7 @@ table{border-collapse:collapse;}
 th,td{font-family:Arial,"微软雅黑",sans-serif;font-size:11pt;border:1px solid #cccccc;padding:5px 10px;}
 th{background:#1d1d2e;color:white;font-weight:bold;}
 a{color:#1677ff;text-decoration:none;}
+.index-link {color:#52c41a;}
 </style>
 </head><body><table>`;
 
@@ -383,7 +441,11 @@ a{color:#1677ff;text-decoration:none;}
       if (di === linkPos) {
         const kw  = row[kwColIndex] ?? '';
         const url = buildAmazonUrl(kw);
-        html += `<td><a href="${esc(url)}">链接</a></td>`;
+        html += `<td><a href="${esc(url)}">搜索</a></td>`;
+      } else if (di === indexPos) {
+        const kw  = row[kwColIndex] ?? '';
+        const url = buildIndexUrl(kw, asinVal);
+        html += `<td><a href="${esc(url)}" class="index-link">查收录</a></td>`;
       } else {
         const oi  = origIdx(di);
         const val = row[oi] ?? '';
@@ -404,7 +466,7 @@ a{color:#1677ff;text-decoration:none;}
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `${currentBase}_着色版.xls`;
+  a.download = `${currentBase}_着色及收录版.xls`;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);

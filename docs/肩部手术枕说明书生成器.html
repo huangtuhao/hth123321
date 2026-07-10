@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A4 Product Guide</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #e5e5e5;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #000;
+    }
+
+    .app {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .toolbar {
+      background: #fff;
+      border: 3px solid #000;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+
+    .toolbar h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    label {
+      font-weight: bold;
+      font-size: 15px;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+      border: 2px solid #000;
+      padding: 9px;
+      font-size: 15px;
+      background: #fff;
+      color: #000;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      border: 3px solid #000;
+      background: #000;
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: #000;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    .page-wrap {
+      background: #fff;
+      border: 3px solid #000;
+      padding: 10px;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border: 2px solid #000;
+      background: #fff;
+    }
+
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      body {
+        background: #fff;
+        padding: 0;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .app {
+        max-width: none;
+        margin: 0;
+      }
+
+      .page-wrap {
+        border: none;
+        padding: 0;
+      }
+
+      canvas {
+        border: none;
+        width: 100vw;
+        height: auto;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 10px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar h1 {
+        font-size: 21px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="toolbar">
+      <h1>A4 Product Guide Generator</h1>
+
+      <div class="controls">
+        <div class="control">
+          <label for="brandInput">Brand Name</label>
+          <input id="brandInput" type="text" value="Your Brand" />
+        </div>
+
+        <div class="control">
+          <label for="productInput">Product Name</label>
+          <input id="productInput" type="text" value="Shoulder Recovery Pillow" />
+        </div>
+
+        <div class="control">
+          <label for="frontImageInput">Left Image</label>
+          <input id="frontImageInput" type="file" accept="image/*" />
+        </div>
+
+        <div class="control">
+          <label for="backImageInput">Right Image</label>
+          <input id="backImageInput" type="file" accept="image/*" />
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button onclick="renderAll()">Update</button>
+        <button class="secondary" onclick="downloadCanvas('guideCanvas', 'a4-product-guide.png')">
+          Download PNG
+        </button>
+      </div>
+    </div>
+
+    <div class="page-wrap">
+      <canvas id="guideCanvas" width="3508" height="2480"></canvas>
+    </div>
+  </div>
+
+  <script>
+    /*
+      ============================================================
+      A4 横版画布尺寸
+      3508 x 2480 约等于 A4 横版 300DPI
+      一般不需要改
+      ============================================================
+    */
+    const W = 3508;
+    const H = 2480;
+
+    /*
+      ============================================================
+      字体大小集中设置区
+      你以后主要改这里即可
+
+      调整建议：
+      1. 如果只想整体更清晰，优先调 body 类字体。
+      2. 字体变大后，如果文字上下太挤，增加对应 lineHeight。
+      3. 如果文字超出框，先减小字体，或者增加 boxHeight。
+      4. 字体单位都是 px，数值越大，打印出来越大。
+      ============================================================
+    */
+    const FONT = {
+      // 左右顶部大标题，例如 Instructions / Care Guide
+      headerTitle: 48,
+
+      // 顶部副标题，例如 Your Brand · Shoulder Recovery Pillow
+      headerSubtitle: 29,
+
+      // 黑底分区标题，例如 Product Positioning / Quick Start / Maintenance
+      sectionTitle: 40,
+
+      // 图片未上传时，占位框里的大字
+      placeholderTitle: 56,
+
+      // 图片未上传时，占位框里的小字
+      placeholderSubtitle: 36,
+
+      // Support Areas 三个小框标题
+      featureTitle: 44,
+
+      // Support Areas 三个小框正文
+      featureBody: 40,
+
+      // Quick Start 数字 1 / 2 / 3 / 4
+      stepNumber: 44,
+
+      // Quick Start 步骤标题
+      stepTitle: 44,
+
+      // Quick Start 步骤正文
+      stepBody: 40,
+
+      // Care Steps 数字 1 / 2 / 3
+      careNumber: 44,
+
+      // Care Steps 标题
+      careTitle: 44,
+
+      // Care Steps 正文
+      careBody: 40,
+
+      // Maintenance 两个框标题
+      infoTitle: 44,
+
+      // Maintenance 两个框正文
+      infoBody: 40,
+
+      // 左下 Important Note 标题
+      noteTitle: 44,
+
+      // 左下 Important Note 正文
+      noteBody: 40,
+
+      // 右下 WARNING 标题
+      warningTitle: 44,
+
+      // 右下 WARNING 正文
+      warningBody: 40
+    };
+
+    /*
+      ============================================================
+      行高集中设置区
+      字体变大后，通常也要适当加大行高。
+      简单规则：
+      30px 字体 -> 38 到 40 行高
+      32px 字体 -> 40 到 42 行高
+      34px 字体 -> 44 到 46 行高
+      36px 字体 -> 46 到 48 行高
+      38px 字体 -> 48 到 52 行高
+      ============================================================
+    */
+    const LINE = {
+      featureBody: 54,
+      stepBody: 54,
+      careBody: 54,
+      infoBody: 54,
+      noteBody: 54,
+      warningBody: 54
+    };
+
+    /*
+      ============================================================
+      版式尺寸集中设置区
+      如果字体变大后放不下，就调这里。
+      ============================================================
+    */
+    const LAYOUT = {
+      // 整张 A4 内边距。数值越小，内容越靠边，空间越大。
+      pageMargin: 74,
+
+      // 左右栏之间的中缝宽度。数值越小，两栏越宽。
+      columnGutter: 54,
+
+      // 外框距离页面边缘
+      outerBorderMargin: 38,
+
+      // 中间竖线距离上下边缘
+      dividerTopBottom: 78,
+
+      // 顶部黑色标题栏高度
+      headerHeight: 96,
+
+      // 顶部标题栏 Y 坐标
+      headerY: 76,
+
+      // 分区黑色标题条高度
+      sectionHeight: 62,
+
+      // 图片区域高度。想让图片更大，主要改这里。
+      imageHeight: 980,
+
+      // 图片框内部留白。数值越小，图片越大。
+      imagePadding: 16,
+
+      // 三个 Support / Care 小框高度
+      smallBoxHeight: 198,
+
+      // Quick Start 步骤框高度
+      stepBoxHeight: 198,
+
+      // Maintenance 框高度
+      infoBoxHeight: 198,
+
+      // 左下 Important Note 框高度
+      noteBoxHeight: 245,
+
+      // 右下 WARNING 框高度
+      warningBoxHeight: 457,
+
+      // 小框之间的横向间距
+      smallBoxGap: 16,
+
+      // 两列步骤框之间的横向间距
+      stepGap: 20,
+
+      // 两列维护框之间的横向间距
+      infoGap: 20
+    };
+
+    /*
+      ============================================================
+      各模块 Y 坐标集中设置
+      如果你加大某个框高度导致下面重叠，就在这里往下移。
+      ============================================================
+    */
+    const POS = {
+      // 第一组分区标题
+      firstSectionY: 200,
+
+      // 图片框起始 Y
+      imageY: 282,
+
+      // Support Areas / Care Steps 标题 Y
+      midSectionY: 1288,
+
+      // Support Areas / Care Steps 小框 Y
+      midBoxesY: 1368,
+
+      // Quick Start / Maintenance 标题 Y
+      lowerSectionY: 1592,
+
+      // Quick Start / Maintenance 框 Y
+      lowerBoxesY: 1672,
+
+      // 左下 Important Note 框 Y
+      noteY: 2130,
+
+      // 右下 WARNING 框 Y
+      warningY: 1918
+    };
+
+    let frontImage = null;
+    let backImage = null;
+
+    const COLORS = {
+      black: "#000000",
+      white: "#FFFFFF",
+      gray: "#F4F4F4"
+    };
+
+    const brandInput = document.getElementById("brandInput");
+    const productInput = document.getElementById("productInput");
+    const frontImageInput = document.getElementById("frontImageInput");
+    const backImageInput = document.getElementById("backImageInput");
+
+    frontImageInput.addEventListener("change", function () {
+      loadImageFromInput(frontImageInput, function (img) {
+        frontImage = img;
+        renderAll();
+      });
+    });
+
+    backImageInput.addEventListener("change", function () {
+      loadImageFromInput(backImageInput, function (img) {
+        backImage = img;
+        renderAll();
+      });
+    });
+
+    brandInput.addEventListener("input", renderAll);
+    productInput.addEventListener("input", renderAll);
+
+    function font(size, weight) {
+      return (weight ? weight + " " : "") + size + "px Arial";
+    }
+
+    function loadImageFromInput(input, callback) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        const img = new Image();
+
+        img.onload = function () {
+          callback(img);
+        };
+
+        img.src = e.target.result;
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function clearPage(ctx) {
+      ctx.fillStyle = COLORS.white;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+      const words = String(text).split(" ");
+      let line = "";
+      let currentY = y;
+      let lines = 0;
+
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + " ";
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > maxWidth && n > 0) {
+          ctx.fillText(line.trim(), x, currentY);
+          lines++;
+
+          if (maxLines && lines >= maxLines) {
+            return currentY + lineHeight;
+          }
+
+          line = words[n] + " ";
+          currentY += lineHeight;
+        } else {
+          line = testLine;
+        }
+      }
+
+      if (!maxLines || lines < maxLines) {
+        ctx.fillText(line.trim(), x, currentY);
+        lines++;
+      }
+
+      return currentY + lineHeight;
+    }
+
+    function fillBox(ctx, x, y, w, h, fill, lineWidth) {
+      ctx.fillStyle = fill || COLORS.white;
+      ctx.fillRect(x, y, w, h);
+
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = lineWidth || 4;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    function placeholder(ctx, x, y, w, h, text) {
+      ctx.fillStyle = COLORS.gray;
+      ctx.fillRect(x, y, w, h);
+
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 5;
+      ctx.setLineDash([24, 16]);
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.placeholderTitle, "bold");
+      ctx.textAlign = "center";
+      ctx.fillText(text, x + w / 2, y + h / 2 - 18);
+
+      ctx.font = font(FONT.placeholderSubtitle);
+      ctx.fillText("Upload image to preview", x + w / 2, y + h / 2 + 48);
+
+      ctx.textAlign = "left";
+    }
+
+    function drawImageContain(ctx, img, x, y, w, h) {
+      const imgRatio = img.width / img.height;
+      const boxRatio = w / h;
+
+      let drawW;
+      let drawH;
+      let drawX;
+      let drawY;
+
+      if (imgRatio > boxRatio) {
+        drawW = w;
+        drawH = w / imgRatio;
+        drawX = x;
+        drawY = y + (h - drawH) / 2;
+      } else {
+        drawH = h;
+        drawW = h * imgRatio;
+        drawX = x + (w - drawW) / 2;
+        drawY = y;
+      }
+
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    }
+
+    function sectionTitle(ctx, text, x, y, w) {
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(x, y, w, LAYOUT.sectionHeight);
+
+      ctx.fillStyle = COLORS.white;
+      ctx.font = font(FONT.sectionTitle, "bold");
+      ctx.fillText(text, x + 24, y + 44);
+    }
+
+    function smallFeature(ctx, x, y, w, h, title, body) {
+      fillBox(ctx, x, y, w, h, COLORS.white, 4);
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.featureTitle, "bold");
+      ctx.fillText(title, x + 18, y + 48);
+
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 18, y + 66);
+      ctx.lineTo(x + w - 18, y + 66);
+      ctx.stroke();
+
+      ctx.font = font(FONT.featureBody);
+      wrapText(ctx, body, x + 18, y + 108, w - 36, LINE.featureBody, 2);
+    }
+
+    function stepBox(ctx, x, y, w, h, num, title, body) {
+      fillBox(ctx, x, y, w, h, COLORS.white, 4);
+
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(x + 18, y + 18, 64, 64);
+
+      ctx.fillStyle = COLORS.white;
+      ctx.font = font(FONT.stepNumber, "bold");
+      ctx.textAlign = "center";
+      ctx.fillText(num, x + 50, y + 62);
+      ctx.textAlign = "left";
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.stepTitle, "bold");
+      ctx.fillText(title, x + 100, y + 64);
+
+      ctx.font = font(FONT.stepBody);
+      wrapText(ctx, body, x + 18, y + 126, w - 36, LINE.stepBody, 2);
+    }
+
+    function careBox(ctx, x, y, w, h, num, title, body) {
+      fillBox(ctx, x, y, w, h, COLORS.white, 4);
+
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(x + 16, y + 16, 60, 60);
+
+      ctx.fillStyle = COLORS.white;
+      ctx.font = font(FONT.careNumber, "bold");
+      ctx.textAlign = "center";
+      ctx.fillText(num, x + 46, y + 58);
+      ctx.textAlign = "left";
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.careTitle, "bold");
+      ctx.fillText(title, x + 88, y + 58);
+
+      ctx.font = font(FONT.careBody);
+      wrapText(ctx, body, x + 16, y + 112, w - 32, LINE.careBody, 2);
+    }
+
+    function infoPanel(ctx, x, y, w, h, title, body) {
+      fillBox(ctx, x, y, w, h, COLORS.white, 4);
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.infoTitle, "bold");
+      ctx.fillText(title, x + 18, y + 50);
+
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 18, y + 70);
+      ctx.lineTo(x + w - 18, y + 70);
+      ctx.stroke();
+
+      ctx.font = font(FONT.infoBody);
+      wrapText(ctx, body, x + 18, y + 114, w - 36, LINE.infoBody, 2);
+    }
+
+    function drawColumnHeader(ctx, x, y, w, title, subtitle) {
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(x, y, w, LAYOUT.headerHeight);
+
+      ctx.fillStyle = COLORS.white;
+      ctx.font = font(FONT.headerTitle, "bold");
+      ctx.fillText(title, x + 26, y + 48);
+
+      ctx.font = font(FONT.headerSubtitle);
+      ctx.fillText(subtitle, x + 26, y + 82);
+    }
+
+    function drawGuide() {
+      const canvas = document.getElementById("guideCanvas");
+      const ctx = canvas.getContext("2d");
+
+      clearPage(ctx);
+
+      const margin = LAYOUT.pageMargin;
+      const gutter = LAYOUT.columnGutter;
+      const columnW = (W - margin * 2 - gutter) / 2;
+      const leftX = margin;
+      const rightX = margin + columnW + gutter;
+
+      const brand = brandInput.value.trim() || "Your Brand";
+      const product = productInput.value.trim() || "Shoulder Recovery Pillow";
+
+      // 外边框
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(
+        LAYOUT.outerBorderMargin,
+        LAYOUT.outerBorderMargin,
+        W - LAYOUT.outerBorderMargin * 2,
+        H - LAYOUT.outerBorderMargin * 2
+      );
+
+      // 中间分隔线
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, LAYOUT.dividerTopBottom);
+      ctx.lineTo(W / 2, H - LAYOUT.dividerTopBottom);
+      ctx.stroke();
+
+      // =========================
+      // 左栏 Instructions
+      // =========================
+      drawColumnHeader(
+        ctx,
+        leftX,
+        LAYOUT.headerY,
+        columnW,
+        "Instructions",
+        brand + " · " + product
+      );
+
+      sectionTitle(ctx, "Product Positioning", leftX, POS.firstSectionY, columnW);
+
+      fillBox(
+        ctx,
+        leftX,
+        POS.imageY,
+        columnW,
+        LAYOUT.imageHeight,
+        COLORS.white,
+        5
+      );
+
+      if (frontImage) {
+        drawImageContain(
+          ctx,
+          frontImage,
+          leftX + LAYOUT.imagePadding,
+          POS.imageY + LAYOUT.imagePadding,
+          columnW - LAYOUT.imagePadding * 2,
+          LAYOUT.imageHeight - LAYOUT.imagePadding * 2
+        );
+      } else {
+        placeholder(
+          ctx,
+          leftX + LAYOUT.imagePadding,
+          POS.imageY + LAYOUT.imagePadding,
+          columnW - LAYOUT.imagePadding * 2,
+          LAYOUT.imageHeight - LAYOUT.imagePadding * 2,
+          "Product Image"
+        );
+      }
+
+      sectionTitle(ctx, "Support Areas", leftX, POS.midSectionY, columnW);
+
+      const fGap = LAYOUT.smallBoxGap;
+      const fW = (columnW - fGap * 2) / 3;
+
+      smallFeature(
+        ctx,
+        leftX,
+        POS.midBoxesY,
+        fW,
+        LAYOUT.smallBoxHeight,
+        "Arm Support",
+        "Rest your forearm on the pillow platform."
+      );
+
+      smallFeature(
+        ctx,
+        leftX + fW + fGap,
+        POS.midBoxesY,
+        fW,
+        LAYOUT.smallBoxHeight,
+        "Wrist Strap",
+        "Secure gently if extra support is needed."
+      );
+
+      smallFeature(
+        ctx,
+        leftX + (fW + fGap) * 2,
+        POS.midBoxesY,
+        fW,
+        LAYOUT.smallBoxHeight,
+        "Back Support",
+        "Helps keep the pillow stable during rest."
+      );
+
+      sectionTitle(ctx, "Quick Start", leftX, POS.lowerSectionY, columnW);
+
+      const sGap = LAYOUT.stepGap;
+      const sW = (columnW - sGap) / 2;
+      const sH = LAYOUT.stepBoxHeight;
+
+      stepBox(
+        ctx,
+        leftX,
+        POS.lowerBoxesY,
+        sW,
+        sH,
+        "1",
+        "Place Pillow",
+        "Place your head pillow first, then set this support beside you."
+      );
+
+      stepBox(
+        ctx,
+        leftX + sW + sGap,
+        POS.lowerBoxesY,
+        sW,
+        sH,
+        "2",
+        "Rest Arm",
+        "Lay your forearm on the support and relax your shoulder."
+      );
+
+      stepBox(
+        ctx,
+        leftX,
+        POS.lowerBoxesY + sH + sGap,
+        sW,
+        sH,
+        "3",
+        "Use Strap",
+        "Fasten the wrist strap gently. Do not over-tighten."
+      );
+
+      stepBox(
+        ctx,
+        leftX + sW + sGap,
+        POS.lowerBoxesY + sH + sGap,
+        sW,
+        sH,
+        "4",
+        "Adjust",
+        "Shift the pillow until your shoulder feels supported."
+      );
+
+      fillBox(
+        ctx,
+        leftX,
+        POS.noteY,
+        columnW,
+        LAYOUT.noteBoxHeight,
+        COLORS.gray,
+        5
+      );
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.noteTitle, "bold");
+      ctx.fillText("Important Note", leftX + 26, POS.noteY + 68);
+
+      ctx.font = font(FONT.noteBody);
+      wrapText(
+        ctx,
+        "Stop use if discomfort, numbness, swelling, or unusual pressure occurs. Adjust the pillow position until the shoulder and arm feel naturally supported.",
+        leftX + 26,
+        POS.noteY + 132,
+        columnW - 52,
+        LINE.noteBody,
+        3
+      );
+
+      // =========================
+      // 右栏 Care Guide
+      // =========================
+      drawColumnHeader(
+        ctx,
+        rightX,
+        LAYOUT.headerY,
+        columnW,
+        "Care Guide",
+        brand + " · " + product
+      );
+
+      sectionTitle(ctx, "Cleaning Instructions", rightX, POS.firstSectionY, columnW);
+
+      fillBox(
+        ctx,
+        rightX,
+        POS.imageY,
+        columnW,
+        LAYOUT.imageHeight,
+        COLORS.white,
+        5
+      );
+
+      if (backImage) {
+        drawImageContain(
+          ctx,
+          backImage,
+          rightX + LAYOUT.imagePadding,
+          POS.imageY + LAYOUT.imagePadding,
+          columnW - LAYOUT.imagePadding * 2,
+          LAYOUT.imageHeight - LAYOUT.imagePadding * 2
+        );
+      } else {
+        placeholder(
+          ctx,
+          rightX + LAYOUT.imagePadding,
+          POS.imageY + LAYOUT.imagePadding,
+          columnW - LAYOUT.imagePadding * 2,
+          LAYOUT.imageHeight - LAYOUT.imagePadding * 2,
+          "Care Image"
+        );
+      }
+
+      sectionTitle(ctx, "Care Steps", rightX, POS.midSectionY, columnW);
+
+      const cGap = LAYOUT.smallBoxGap;
+      const cW = (columnW - cGap * 2) / 3;
+
+      careBox(
+        ctx,
+        rightX,
+        POS.midBoxesY,
+        cW,
+        LAYOUT.smallBoxHeight,
+        "1",
+        "Remove Cover",
+        "Unzip and remove the outer cover before washing."
+      );
+
+      careBox(
+        ctx,
+        rightX + cW + cGap,
+        POS.midBoxesY,
+        cW,
+        LAYOUT.smallBoxHeight,
+        "2",
+        "Wash Cold",
+        "Machine wash cold with similar colors."
+      );
+
+      careBox(
+        ctx,
+        rightX + (cW + cGap) * 2,
+        POS.midBoxesY,
+        cW,
+        LAYOUT.smallBoxHeight,
+        "3",
+        "Dry Low",
+        "Air dry or tumble dry on low heat."
+      );
+
+      sectionTitle(ctx, "Maintenance", rightX, POS.lowerSectionY, columnW);
+
+      const mGap = LAYOUT.infoGap;
+      const mW = (columnW - mGap) / 2;
+
+      infoPanel(
+        ctx,
+        rightX,
+        POS.lowerBoxesY,
+        mW,
+        LAYOUT.infoBoxHeight,
+        "Foam Core",
+        "Do not wash, soak, bleach, iron, or heat the foam insert."
+      );
+
+      infoPanel(
+        ctx,
+        rightX + mW + mGap,
+        POS.lowerBoxesY,
+        mW,
+        LAYOUT.infoBoxHeight,
+        "Storage",
+        "Store in a cool, dry place away from direct sunlight."
+      );
+
+      fillBox(
+        ctx,
+        rightX,
+        POS.warningY,
+        columnW,
+        LAYOUT.warningBoxHeight,
+        COLORS.gray,
+        5
+      );
+
+      ctx.fillStyle = COLORS.black;
+      ctx.font = font(FONT.warningTitle, "bold");
+      ctx.fillText("WARNING", rightX + 28, POS.warningY + 72);
+
+      ctx.font = font(FONT.warningBody);
+      wrapText(
+        ctx,
+        "For adult support only. This product is not a medical treatment device.",
+        rightX + 28,
+        POS.warningY + 142,
+        columnW - 56,
+        LINE.warningBody,
+        2
+      );
+
+      wrapText(
+        ctx,
+        "Stop use if pain, numbness, swelling, or discomfort occurs.",
+        rightX + 28,
+        POS.warningY + 242,
+        columnW - 56,
+        LINE.warningBody,
+        2
+      );
+
+      wrapText(
+        ctx,
+        "Follow your doctor's recovery instructions. Not intended to diagnose, treat, cure, or prevent disease.",
+        rightX + 28,
+        POS.warningY + 342,
+        columnW - 56,
+        LINE.warningBody,
+        3
+      );
+    }
+
+    function renderAll() {
+      drawGuide();
+    }
+
+    function downloadCanvas(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const link = document.createElement("a");
+
+      link.download = filename;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

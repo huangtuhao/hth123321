@@ -156,11 +156,17 @@ AMZ-MSKU-002	TOY10007	感官瓷砖-数字款-套装2(1-6)</textarea>
                         const page = await pdfjsDoc.getPage(i);
                         const textContent = await page.getTextContent();
                         const pageText = textContent.items.map(item => item.str).join(' ');
+                        
+                        // 💡 核心修改：生成一个没有空格和换行符的纯净文本版，专治各种换行断词
+                        const compactPageText = pageText.replace(/\s+/g, '');
 
                         let foundMsku = null;
                         for (const msku of mskuList) {
-                            const mskuRegex = new RegExp(`\\b${escapeRegex(msku)}\\b`);
-                            if (mskuRegex.test(pageText)) {
+                            // 把你输入的 MSKU 也清理一下，以防万一
+                            const compactMsku = msku.replace(/\s+/g, '');
+                            
+                            // 💡 核心修改：使用 includes 直接在无空格文本中寻找 MSKU
+                            if (compactPageText.includes(compactMsku)) {
                                 foundMsku = msku;
                                 break; 
                             }

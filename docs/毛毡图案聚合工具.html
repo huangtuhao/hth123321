@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1:1 图片批量网格拼图合并工具 (1200x1200)</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger-color: #dc2626;
+            --danger-hover: #b91c1c;
+            --bg-color: #f8fafc;
+            --panel-bg: #ffffff;
+            --text-main: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 24px;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .container {
+            display: flex;
+            gap: 24px;
+            max-width: 1280px;
+            width: 100%;
+            align-items: flex-start;
+        }
+
+        /* 控制面板 */
+        .control-panel {
+            flex: 1;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #334155;
+            border-left: 4px solid var(--primary-color);
+            padding-left: 8px;
+            margin-bottom: 12px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #475569;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        button, .file-upload-label {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: var(--danger-hover);
+        }
+
+        .btn-secondary {
+            background-color: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+        }
+
+        .btn-secondary:hover {
+            background-color: #e2e8f0;
+        }
+
+        .file-upload-label {
+            background-color: #f0fdf4;
+            color: #16a34a;
+            border: 1px dashed #bbf7d0;
+            flex: 1;
+        }
+
+        .file-upload-label:hover {
+            background-color: #dcfce7;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        input[type="text"], input[type="number"], select, input[type="color"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            background-color: #fff;
+        }
+
+        input[type="color"] {
+            padding: 2px;
+            height: 38px;
+            cursor: pointer;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin-top: 4px;
+        }
+
+        .range-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .range-container span {
+            font-size: 14px;
+            color: #64748b;
+            min-width: 30px;
+        }
+
+        /* 图片列表管理 */
+        .image-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 240px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px;
+            background-color: #f8fafc;
+        }
+
+        .image-item {
+            display: flex;
+            align-items: center;
+            background: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .img-thumb {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .img-name {
+            flex: 1;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #334155;
+        }
+
+        .img-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .action-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+        }
+
+        /* 预览区 */
+        .preview-panel {
+            flex: 1;
+            position: sticky;
+            top: 20px;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .canvas-container {
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            background-color: #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .download-btn-container {
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .btn-download {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+        }
+
+        /* 响应式适配 */
+        @media (max-width: 968px) {
+            .container {
+                flex-direction: column-reverse;
+            }
+            .preview-panel {
+                position: static;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>1:1 图片批量网格拼图工具</h1>
+        <p>专为正方形图片设计，自动合并渲染为 1200 × 1200 像素的高清大图</p>
+    </header>
+
+    <div class="container">
+        <div class="control-panel">
+            <div>
+                <div class="section-title">图片管理</div>
+                <div class="btn-group">
+                    <label class="file-upload-label" for="fileInput">
+                        ➕ 批量选择图片
+                    </label>
+                    <input type="file" id="fileInput" accept="image/*" multiple>
+                    <button class="btn-danger" id="clearAllBtn" type="button">🗑️ 清除所有</button>
+                </div>
+                <div class="form-group">
+                    <label>已上传图片列表 (建议上传8张，支持拖拽或使用按钮调整顺序):</label>
+                    <div class="image-list" id="imageList">
+                        </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">布局与间距</div>
+                <div class="form-group">
+                    <label for="gridType">网格类型</label>
+                    <select id="gridType">
+                        <option value="3">3 × 3 网格 (每格约 400x400px - 最适合8张图)</option>
+                        <option value="2">2 × 2 网格 (每格约 600x600px)</option>
+                        <option value="4">4 × 4 网格 (每格约 300x300px)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="gridGap">网格间距 (缝隙宽度)</label>
+                    <div class="range-container">
+                        <input type="range" id="gridGap" min="0" max="40" value="10">
+                        <span id="gapValue">10px</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="bgColor">背景颜色 (间距及空位填充色)</label>
+                    <input type="color" id="bgColor" value="#ffffff">
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">空位文本标签 (用于填充剩余网格)</div>
+                <div class="form-group">
+                    <label for="tileText">自定义文本 (支持输入 \n 换行)</label>
+                    <input type="text" id="tileText" value="可爱动物">
+                </div>
+                <div class="form-group">
+                    <label for="textColor">文字颜色</label>
+                    <input type="color" id="textColor" value="#1e293b">
+                </div>
+                <div class="form-group">
+                    <label for="fontSize">文字大小 (px)</label>
+                    <div class="range-container">
+                        <input type="range" id="fontSize" min="20" max="80" value="36">
+                        <span id="fontSizeValue">36px</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="preview-panel">
+            <div class="section-title" style="width:100%; text-align:left; margin-bottom:0;">画布实时预览 (1200x1200px)</div>
+            <div class="canvas-container">
+                <canvas id="mergeCanvas" width="1200" height="1200"></canvas>
+            </div>
+            <div class="download-btn-container">
+                <button class="btn-primary btn-download" id="downloadBtn">💾 导出并下载合并大图</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 存储上传的图片对象数组
+        let imageItems = [];
+        let idCounter = 0;
+
+        // DOM 元素
+        const fileInput = document.getElementById('fileInput');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const imageList = document.getElementById('imageList');
+        const gridTypeSelect = document.getElementById('gridType');
+        const gridGapInput = document.getElementById('gridGap');
+        const gapValueSpan = document.getElementById('gapValue');
+        const bgColorInput = document.getElementById('bgColor');
+        const tileTextInput = document.getElementById('tileText');
+        const textColorInput = document.getElementById('textColor');
+        const fontSizeInput = document.getElementById('fontSize');
+        const fontSizeValueSpan = document.getElementById('fontSizeValue');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const canvas = document.getElementById('mergeCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 初始化触发一次Canvas绘制
+        window.addEventListener('DOMContentLoaded', drawGrid);
+
+        // 事件监听
+        fileInput.addEventListener('change', handleFileSelect);
+        clearAllBtn.addEventListener('click', clearAllImages);
+        gridTypeSelect.addEventListener('change', drawGrid);
+        bgColorInput.addEventListener('input', drawGrid);
+        tileTextInput.addEventListener('input', drawGrid);
+        textColorInput.addEventListener('input', drawGrid);
+
+        gridGapInput.addEventListener('input', (e) => {
+            gapValueSpan.textContent = e.target.value + 'px';
+            drawGrid();
+        });
+
+        fontSizeInput.addEventListener('input', (e) => {
+            fontSizeValueSpan.textContent = e.target.value + 'px';
+            drawGrid();
+        });
+
+        downloadBtn.addEventListener('click', downloadCanvasImage);
+
+        // 处理文件选择
+        function handleFileSelect(e) {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            let loadedCount = 0;
+            const totalFiles = files.length;
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.onload = function() {
+                        imageItems.push({
+                            id: idCounter++,
+                            name: file.name,
+                            imgElement: img
+                        });
+                        loadedCount++;
+                        if (loadedCount === totalFiles) {
+                            updateImageListView();
+                            drawGrid();
+                            fileInput.value = ''; // 清除选择记录，允许重复上传同名文件
+                        }
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 清除所有图片
+        function clearAllImages() {
+            if (imageItems.length === 0) return;
+            if (confirm('确定要清除所有已上传的图片吗？')) {
+                imageItems = [];
+                updateImageListView();
+                drawGrid();
+            }
+        }
+
+        // 更新左侧列表 UI
+        function updateImageListView() {
+            imageList.innerHTML = '';
+            if (imageItems.length === 0) {
+                imageList.innerHTML = '<div style="color: #94a3b8; font-size: 13px; text-align: center; padding: 20px;">暂无图片，请点击上方按钮批量选择上传</div>';
+                return;
+            }
+
+            imageItems.forEach((item, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'image-item';
+
+                // 缩略图
+                const thumb = document.createElement('img');
+                thumb.className = 'img-thumb';
+                thumb.src = item.imgElement.src;
+
+                // 名称
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'img-name';
+                nameSpan.textContent = `${index + 1}. ${item.name}`;
+
+                // 操作按钮组
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'img-actions';
+
+                // 上移
+                const upBtn = document.createElement('button');
+                upBtn.className = 'action-btn btn-secondary';
+                upBtn.innerHTML = '▲';
+                upBtn.disabled = index === 0;
+                upBtn.onclick = () => moveItem(index, -1);
+
+                // 下移
+                const downBtn = document.createElement('button');
+                downBtn.className = 'action-btn btn-secondary';
+                downBtn.innerHTML = '▼';
+                downBtn.disabled = index === imageItems.length - 1;
+                downBtn.onclick = () => moveItem(index, 1);
+
+                // 删除
+                const delBtn = document.createElement('button');
+                delBtn.className = 'action-btn btn-danger';
+                delBtn.innerHTML = '×';
+                delBtn.onclick = () => deleteItem(index);
+
+                actionsDiv.appendChild(upBtn);
+                actionsDiv.appendChild(downBtn);
+                actionsDiv.appendChild(delBtn);
+
+                itemDiv.appendChild(thumb);
+                itemDiv.appendChild(nameSpan);
+                itemDiv.appendChild(actionsDiv);
+                imageList.appendChild(itemDiv);
+            });
+        }
+
+        function moveItem(index, direction) {
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= imageItems.length) return;
+            const temp = imageItems[index];
+            imageItems[index] = imageItems[targetIndex];
+            imageItems[targetIndex] = temp;
+            updateImageListView();
+            drawGrid();
+        }
+
+        function deleteItem(index) {
+            imageItems.splice(index, 1);
+            updateImageListView();
+            drawGrid();
+        }
+
+        // 核心绘制逻辑
+        function drawGrid() {
+            const canvasSize = 1200;
+            const gridCount = parseInt(gridTypeSelect.value); // 如: 3
+            const gap = parseInt(gridGapInput.value); // 如: 10
+            const bgColor = bgColorInput.value;
+
+            // 清空并填充背景色
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+            // 计算格子边长: 扣除掉所有缝隙占据的尺寸
+            const cellSize = (canvasSize - (gridCount - 1) * gap) / gridCount;
+            const totalSlots = gridCount * gridCount;
+
+            for (let i = 0; i < totalSlots; i++) {
+                const row = Math.floor(i / gridCount);
+                const col = i % gridCount;
+                
+                // 计算当前格子的绝对坐标
+                const x = col * (cellSize + gap);
+                const y = row * (cellSize + gap);
+
+                if (i < imageItems.length) {
+                    const img = imageItems[i].imgElement;
+                    
+                    // Cover 居中裁剪对齐
+                    const imgWidth = img.naturalWidth;
+                    const imgHeight = img.naturalHeight;
+                    const imgAspect = imgWidth / imgHeight;
+                    
+                    let sx, sy, sWidth, sHeight;
+                    if (imgAspect > 1) { // 宽图
+                        sHeight = imgHeight;
+                        sWidth = imgHeight; 
+                        sx = (imgWidth - sWidth) / 2;
+                        sy = 0;
+                    } else { // 长图或正方形
+                        sWidth = imgWidth;
+                        sHeight = imgWidth;
+                        sx = 0;
+                        sy = (imgHeight - sHeight) / 2;
+                    }
+
+                    ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, cellSize, cellSize);
+                } else if (i === imageItems.length || (i === totalSlots - 1 && imageItems.length >= totalSlots)) {
+                    // 空位文本绘制
+                    if (i === imageItems.length) {
+                        drawTextInCell(tileTextInput.value, x, y, cellSize);
+                    }
+                }
+            }
+        }
+
+        function drawTextInCell(text, x, y, cellSize) {
+            if (!text.trim()) return;
+
+            const fontSize = parseInt(fontSizeInput.value);
+            ctx.fillStyle = textColorInput.value;
+            ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const centerX = x + cellSize / 2;
+            const centerY = y + cellSize / 2;
+
+            // 支持换行符
+            const lines = text.split('\\n');
+            const lineHeight = fontSize * 1.2;
+            const totalHeight = lines.length * lineHeight;
+
+            lines.forEach((line, index) => {
+                const lineY = centerY - (totalHeight / 2) + (lineHeight / 2) + (index * lineHeight);
+                ctx.fillText(line, centerX, lineY, cellSize - 20);
+            });
+        }
+
+        // 导出
+        function downloadCanvasImage() {
+            if (imageItems.length === 0) {
+                if (!confirm('当前未上传任何图片，确定要直接导出画布吗？')) {
+                    return;
+                }
+            }
+
+            try {
+                const dataUrl = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = 'merged_grid_1200x1200.png';
+                link.href = dataUrl;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (error) {
+                alert('图片导出失败，请确保您是在本地环境运行或更换浏览器测试。');
+            }
+        }
+    </script>
+</body>
+</html>

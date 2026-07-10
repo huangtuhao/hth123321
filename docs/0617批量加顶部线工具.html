@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量加顶部线工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f7fa;
+    min-height: 100vh;
+    padding: 40px 20px;
+    color: #333;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1B3A7A;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 30px;
+  }
+
+  .controls {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: flex-end;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .control-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .control-group input[type="number"] {
+    width: 100px;
+    height: 40px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 15px;
+    color: #333;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .control-group input[type="number"]:focus {
+    border-color: #1B3A7A;
+  }
+
+  .color-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .control-group input[type="color"] {
+    width: 48px;
+    height: 40px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 3px;
+    cursor: pointer;
+    background: #fff;
+  }
+
+  .color-hex {
+    width: 90px;
+    height: 40px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 14px;
+    font-family: monospace;
+    color: #333;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .color-hex:focus {
+    border-color: #1B3A7A;
+  }
+
+  .position-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .position-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .position-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .pos-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1.5px solid #e0e0e0;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    color: #555;
+    transition: all 0.2s;
+  }
+
+  .pos-btn.active {
+    background: #1B3A7A;
+    border-color: #1B3A7A;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .upload-area {
+    background: #fff;
+    border: 2px dashed #c5d3e8;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 24px;
+  }
+
+  .upload-area:hover, .upload-area.dragover {
+    border-color: #1B3A7A;
+    background: #f0f4ff;
+  }
+
+  .upload-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+
+  .upload-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1B3A7A;
+    margin-bottom: 6px;
+  }
+
+  .upload-sub {
+    font-size: 13px;
+    color: #aaa;
+  }
+
+  #fileInput {
+    display: none;
+  }
+
+  .action-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 10px 24px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #1B3A7A;
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    background: #152d60;
+  }
+
+  .btn-primary:disabled {
+    background: #a0aec0;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: #fff;
+    color: #1B3A7A;
+    border: 1.5px solid #1B3A7A;
+  }
+
+  .btn-secondary:hover {
+    background: #f0f4ff;
+  }
+
+  .btn-danger {
+    background: #fff;
+    color: #e53e3e;
+    border: 1.5px solid #e53e3e;
+  }
+
+  .btn-danger:hover {
+    background: #fff5f5;
+  }
+
+  .count-text {
+    font-size: 13px;
+    color: #888;
+    margin-left: 4px;
+  }
+
+  .image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .image-card {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    transition: transform 0.2s;
+  }
+
+  .image-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .image-preview {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    display: block;
+    background: #f5f5f5;
+  }
+
+  .image-info {
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .image-name {
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+  }
+
+  .status-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .status-ready {
+    background: #ebf4ff;
+    color: #2b6cb0;
+  }
+
+  .status-done {
+    background: #f0fff4;
+    color: #276749;
+  }
+
+  .status-processing {
+    background: #fffbeb;
+    color: #b7791f;
+  }
+
+  .download-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    background: #1B3A7A;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  .download-btn:hover {
+    background: #152d60;
+  }
+
+  .download-btn:disabled {
+    background: #cbd5e0;
+    cursor: not-allowed;
+  }
+
+  .progress-bar-wrap {
+    background: #e2e8f0;
+    border-radius: 99px;
+    height: 6px;
+    margin: 0 12px 10px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: #1B3A7A;
+    border-radius: 99px;
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #bbb;
+    font-size: 14px;
+  }
+
+  canvas { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>批量顶部线添加工具</h1>
+  <p class="subtitle">批量上传图片，自动加上顶部色条，一键下载</p>
+
+  <!-- 控制面板 -->
+  <div class="controls">
+    <div class="control-group">
+      <label>线条高度（px）</label>
+      <input type="number" id="lineHeight" value="3" min="1" max="50">
+    </div>
+
+    <div class="control-group">
+      <label>线条颜色</label>
+      <div class="color-wrapper">
+        <input type="color" id="colorPicker" value="#1B3A7A">
+        <input type="text" class="color-hex" id="colorHex" value="#1B3A7A" maxlength="7">
+      </div>
+    </div>
+
+    <div class="position-group">
+      <label>位置</label>
+      <div class="position-buttons">
+        <button class="pos-btn active" data-pos="top">顶部</button>
+        <button class="pos-btn" data-pos="bottom">底部</button>
+        <button class="pos-btn" data-pos="both">上下都加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上传区域 -->
+  <div class="upload-area" id="uploadArea">
+    <div class="upload-icon">🖼️</div>
+    <div class="upload-text">点击或拖拽上传图片</div>
+    <div class="upload-sub">支持 JPG、PNG、WEBP，可批量选择</div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+
+  <!-- 操作栏 -->
+  <div class="action-bar" id="actionBar" style="display:none">
+    <button class="btn btn-primary" id="processAllBtn">⚡ 全部处理</button>
+    <button class="btn btn-secondary" id="downloadAllBtn" disabled>📦 打包下载全部</button>
+    <button class="btn btn-danger" id="clearBtn">✕ 清空</button>
+    <span class="count-text" id="countText"></span>
+  </div>
+
+  <!-- 图片列表 -->
+  <div class="image-grid" id="imageGrid">
+    <div class="empty-state" id="emptyState">上传图片后显示在这里</div>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.getElementById('uploadArea');
+  const imageGrid = document.getElementById('imageGrid');
+  const emptyState = document.getElementById('emptyState');
+  const actionBar = document.getElementById('actionBar');
+  const processAllBtn = document.getElementById('processAllBtn');
+  const downloadAllBtn = document.getElementById('downloadAllBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const countText = document.getElementById('countText');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const colorPicker = document.getElementById('colorPicker');
+  const colorHex = document.getElementById('colorHex');
+  const lineHeight = document.getElementById('lineHeight');
+
+  let files = [];
+  let processed = {};
+  let position = 'top';
+
+  // 颜色同步
+  colorPicker.addEventListener('input', () => {
+    colorHex.value = colorPicker.value.toUpperCase();
+  });
+
+  colorHex.addEventListener('input', () => {
+    const val = colorHex.value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+      colorPicker.value = val;
+    }
+  });
+
+  // 位置按钮
+  document.querySelectorAll('.pos-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      position = btn.dataset.pos;
+    });
+  });
+
+  // 上传区域点击
+  uploadArea.addEventListener('click', () => fileInput.click());
+
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    addFiles(dropped);
+  });
+
+  fileInput.addEventListener('change', () => {
+    addFiles(Array.from(fileInput.files));
+    fileInput.value = '';
+  });
+
+  function addFiles(newFiles) {
+    newFiles.forEach(file => {
+      if (!files.find(f => f.name === file.name && f.size === file.size)) {
+        files.push(file);
+      }
+    });
+    renderGrid();
+  }
+
+  function renderGrid() {
+    if (files.length === 0) {
+      emptyState.style.display = 'block';
+      actionBar.style.display = 'none';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    actionBar.style.display = 'flex';
+    countText.textContent = `共 ${files.length} 张，已处理 ${Object.keys(processed).length} 张`;
+
+    imageGrid.innerHTML = '';
+
+    files.forEach((file, index) => {
+      const card = document.createElement('div');
+      card.className = 'image-card';
+      card.id = `card-${index}`;
+
+      const isDone = processed[index];
+
+      const img = document.createElement('img');
+      img.className = 'image-preview';
+      img.src = isDone ? processed[index].url : URL.createObjectURL(file);
+      img.id = `preview-${index}`;
+
+      const info = document.createElement('div');
+      info.className = 'image-info';
+
+      const name = document.createElement('div');
+      name.className = 'image-name';
+      name.title = file.name;
+      name.textContent = file.name;
+
+      const badge = document.createElement('span');
+      badge.className = `status-badge ${isDone ? 'status-done' : 'status-ready'}`;
+      badge.textContent = isDone ? '已完成' : '待处理';
+      badge.id = `badge-${index}`;
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'download-btn';
+      dlBtn.textContent = '下载';
+      dlBtn.disabled = !isDone;
+      dlBtn.id = `dlbtn-${index}`;
+      dlBtn.addEventListener('click', () => downloadSingle(index, file.name));
+
+      const progressWrap = document.createElement('div');
+      progressWrap.className = 'progress-bar-wrap';
+      progressWrap.id = `progress-wrap-${index}`;
+      const progressBar = document.createElement('div');
+      progressBar.className = 'progress-bar';
+      progressBar.id = `progress-${index}`;
+      progressWrap.appendChild(progressBar);
+
+      info.appendChild(name);
+      info.appendChild(badge);
+      info.appendChild(dlBtn);
+
+      card.appendChild(img);
+      card.appendChild(progressWrap);
+      card.appendChild(info);
+
+      imageGrid.appendChild(card);
+    });
+
+    const allDone = files.length > 0 && Object.keys(processed).length === files.length;
+    downloadAllBtn.disabled = !allDone;
+  }
+
+  // 处理单张图
+  function processImage(file, index) {
+    return new Promise((resolve) => {
+      const badge = document.getElementById(`badge-${index}`);
+      if (badge) {
+        badge.className = 'status-badge status-processing';
+        badge.textContent = '处理中';
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const h = parseInt(lineHeight.value) || 3;
+          const color = colorHex.value || '#1B3A7A';
+          const addTop = position === 'top' || position === 'both';
+          const addBottom = position === 'bottom' || position === 'both';
+
+          canvas.width = img.width;
+          canvas.height = img.height;
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          ctx.fillStyle = color;
+
+          if (addTop) {
+            ctx.fillRect(0, 0, canvas.width, h);
+          }
+          if (addBottom) {
+            ctx.fillRect(0, canvas.height - h, canvas.width, h);
+          }
+
+          const url = canvas.toDataURL('image/png', 1.0);
+          processed[index] = { url, name: file.name };
+
+          // 更新预览
+          const preview = document.getElementById(`preview-${index}`);
+          if (preview) preview.src = url;
+
+          const b = document.getElementById(`badge-${index}`);
+          if (b) {
+            b.className = 'status-badge status-done';
+            b.textContent = '已完成';
+          }
+
+          const dlBtn = document.getElementById(`dlbtn-${index}`);
+          if (dlBtn) dlBtn.disabled = false;
+
+          countText.textContent = `共 ${files.length} 张，已处理 ${Object.keys(processed).length} 张`;
+
+          const allDone = Object.keys(processed).length === files.length;
+          downloadAllBtn.disabled = !allDone;
+
+          resolve();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 全部处理
+  processAllBtn.addEventListener('click', async () => {
+    processAllBtn.disabled = true;
+    processAllBtn.textContent = '处理中...';
+
+    for (let i = 0; i < files.length; i++) {
+      await processImage(files[i], i);
+    }
+
+    processAllBtn.disabled = false;
+    processAllBtn.textContent = '⚡ 全部处理';
+  });
+
+  // 下载单张
+  function downloadSingle(index, originalName) {
+    if (!processed[index]) return;
+    const a = document.createElement('a');
+    a.href = processed[index].url;
+    const ext = originalName.lastIndexOf('.');
+    const baseName = ext > -1 ? originalName.substring(0, ext) : originalName;
+    a.download = `${baseName}_lined.png`;
+    a.click();
+  }
+
+  // 打包下载全部
+  downloadAllBtn.addEventListener('click', async () => {
+    downloadAllBtn.disabled = true;
+    downloadAllBtn.textContent = '打包中...';
+
+    // 逐个下载（间隔200ms避免浏览器阻止）
+    for (let i = 0; i < files.length; i++) {
+      if (processed[i]) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        downloadSingle(i, files[i].name);
+      }
+    }
+
+    downloadAllBtn.disabled = false;
+    downloadAllBtn.textContent = '📦 打包下载全部';
+  });
+
+  // 清空
+  clearBtn.addEventListener('click', () => {
+    files = [];
+    processed = {};
+    imageGrid.innerHTML = '';
+    imageGrid.appendChild(emptyState);
+    emptyState.style.display = 'block';
+    actionBar.style.display = 'none';
+  });
+</script>
+</body>
+</html>
