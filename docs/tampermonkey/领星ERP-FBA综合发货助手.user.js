@@ -29,11 +29,11 @@
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/佰通清关发票模板.xlsx",
       },
       {
-        name: "良逊清关发票模板.xls",
-        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/良逊清关发票模板.xls",
+        name: "良逊清关发票模板.xlsx",
+        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/良逊清关发票模板.xlsx",
       },
     ],
-    DEFAULT_BRAND_OPTIONS: ['PlentiVive', 'PicoPandax'],
+    DEFAULT_BRAND_OPTIONS: ["PlentiVive", "PicoPandax"],
     STORAGE_KEY: "LX_INVOICE_HELPER_DATA_V1",
     USER_TEMPLATE_KEY: "LX_USER_TEMPLATE_V3_8",
     BUILT_IN_CACHE_KEY: "LX_BUILT_IN_CACHE_V4_3",
@@ -643,7 +643,9 @@
         `<br><a href="javascript:void(0)" class="lx-batch-btn" data-batch="${field}" style="font-size:12px; font-weight:normal; color:#409EFF; text-decoration:none; display:inline-block; margin-top:4px;">[批量修改]</a>`;
 
       // 新增：提取 CONFIG 中的品牌配置，生成下拉框 HTML
-      const brandOptionsHtml = CONFIG.DEFAULT_BRAND_OPTIONS.map(b => `<option value="${b}">${b}</option>`).join('');
+      const brandOptionsHtml = CONFIG.DEFAULT_BRAND_OPTIONS.map(
+        (b) => `<option value="${b}">${b}</option>`,
+      ).join("");
       const brandBatchSelect = `<br><select id="lx-batch-brand" style="margin-top:4px; padding:2px 4px; font-size:12px; border:1px solid #409EFF; border-radius:3px; color:#409EFF; outline:none; cursor:pointer; background: transparent;"><option value="" disabled selected>[批量选择]</option>${brandOptionsHtml}</select>`;
 
       const html = `<div style="max-height:55vh;overflow:auto;"><table class="lx-input-table">
@@ -685,16 +687,18 @@
         // 新增：品牌下拉框的批量应用事件
         const brandSelect = modal.querySelector("#lx-batch-brand");
         if (brandSelect) {
-            brandSelect.onchange = (e) => {
-                const newVal = e.target.value;
-                if (newVal) {
-                    // 覆盖所有品牌输入框
-                    modal.querySelectorAll('input[data-f="brand"]').forEach(input => input.value = newVal);
-                    UI.notify.success(`已将【品牌】批量修改为: ${newVal}`);
-                    // 自动重置回默认的 "[批量选择]" 状态，方便下次重选
-                    e.target.value = ""; 
-                }
-            };
+          brandSelect.onchange = (e) => {
+            const newVal = e.target.value;
+            if (newVal) {
+              // 覆盖所有品牌输入框
+              modal
+                .querySelectorAll('input[data-f="brand"]')
+                .forEach((input) => (input.value = newVal));
+              UI.notify.success(`已将【品牌】批量修改为: ${newVal}`);
+              // 自动重置回默认的 "[批量选择]" 状态，方便下次重选
+              e.target.value = "";
+            }
+          };
         }
 
         document.getElementById("lx-cfm-cancel").onclick = () => {

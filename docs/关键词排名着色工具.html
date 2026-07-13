@@ -242,8 +242,8 @@ function buildIndexUrl(keyword, asin) {
   const k = String(keyword || '').trim();
   const a = String(asin || '').trim();
   if (!k && !a) return 'https://www.amazon.com/s?k=';
-  const query = [k, a].filter(Boolean).join('+');
-  return 'https://www.amazon.com/s?k=' + encodeURIComponent(query);
+  const query = [k, a].filter(Boolean).join(' + ');
+  return 'https://www.amazon.com/s?k=' + encodeURIComponent(query).replace(/%20/g, '+');
 }
 
 // ── State ─────────────────────────────────────
