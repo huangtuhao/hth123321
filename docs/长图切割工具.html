@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>长图切割工具</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: #f4f6f8;
+      color: #222;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      font-size: 28px;
+      text-align: center;
+    }
+
+    .panel {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+      margin-bottom: 20px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    input[type="file"],
+    input[type="number"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d5dbe3;
+      border-radius: 8px;
+      font-size: 15px;
+      background: #fff;
+    }
+
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: #4f8cff;
+      box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.15);
+    }
+
+    .length-box {
+      display: none;
+    }
+
+    .tips {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #eef5ff;
+      color: #2b5c9f;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    button {
+      border: none;
+      border-radius: 9px;
+      padding: 11px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .primary {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .primary:hover {
+      background: #1d4ed8;
+    }
+
+    .secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .secondary:hover {
+      background: #d1d5db;
+    }
+
+    .success {
+      background: #16a34a;
+      color: #fff;
+    }
+
+    .success:hover {
+      background: #15803d;
+    }
+
+    .danger {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .danger:hover {
+      background: #dc2626;
+    }
+
+    .status {
+      margin-top: 14px;
+      font-size: 14px;
+      color: #555;
+      line-height: 1.6;
+    }
+
+    .preview-info {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .preview-original {
+      display: none;
+      margin-top: 16px;
+    }
+
+    .preview-original img {
+      max-width: 100%;
+      max-height: 420px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      display: block;
+      margin-top: 10px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .result-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .result-card img {
+      width: 100%;
+      max-height: 360px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+    }
+
+    .result-meta {
+      margin: 10px 0;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .download-link {
+      display: inline-block;
+      width: 100%;
+      text-align: center;
+      text-decoration: none;
+      background: #111827;
+      color: #fff;
+      padding: 9px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .download-link:hover {
+      background: #000;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    @media (max-width: 720px) {
+      .container {
+        padding: 14px;
+      }
+
+      h1 {
+        font-size: 23px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>长图切割工具</h1>
+
+    <div class="panel">
+      <div class="controls">
+        <div class="form-group">
+          <label for="imageInput">上传图片</label>
+          <input id="imageInput" type="file" accept="image/*" />
+        </div>
+
+        <div class="form-group">
+          <label for="direction">切割方向</label>
+          <select id="direction">
+            <option value="horizontal" selected>横向切割：上下切</option>
+            <option value="vertical">竖向切割：左右切</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="mode">切割模式</label>
+          <select id="mode">
+            <option value="average" selected>模式 1：平均切割</option>
+            <option value="fixed">模式 2：按指定长度切割</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="count">切割图片数量</label>
+          <input id="count" type="number" min="1" step="1" value="5" />
+        </div>
+
+        <div class="form-group length-box" id="lengthBox">
+          <label for="cutLength">每张切割长度，单位：px</label>
+          <input id="cutLength" type="number" min="1" step="1" value="500" />
+        </div>
+      </div>
+
+      <div class="tips">
+        <strong>模式说明：</strong><br />
+        1. 平均切割：例如输入 5，会把图片平均切成 5 张。<br />
+        2. 按指定长度切割：例如图片长度 1100px，输入数量 2、长度 500px，会切出 2 张 500px 和剩余 1 张 100px；输入数量 3、长度 500px，仍然是 2 张 500px 和剩余 1 张 100px。
+      </div>
+
+      <div class="buttons">
+        <button class="primary" id="splitBtn">开始切割</button>
+        <button class="success" id="downloadZipBtn">下载全部 ZIP</button>
+        <button class="secondary" id="clearBtn">清空结果</button>
+      </div>
+
+      <div class="status" id="status">请先上传一张图片。</div>
+
+      <div class="preview-original" id="originalPreviewBox">
+        <strong>原图预览：</strong>
+        <img id="originalPreview" alt="原图预览" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="preview-info" id="previewInfo"></div>
+      <div class="result-grid" id="resultGrid"></div>
+    </div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const imageInput = document.getElementById("imageInput");
+    const directionSelect = document.getElementById("direction");
+    const modeSelect = document.getElementById("mode");
+    const countInput = document.getElementById("count");
+    const cutLengthInput = document.getElementById("cutLength");
+    const lengthBox = document.getElementById("lengthBox");
+    const splitBtn = document.getElementById("splitBtn");
+    const downloadZipBtn = document.getElementById("downloadZipBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const resultGrid = document.getElementById("resultGrid");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const originalPreviewBox = document.getElementById("originalPreviewBox");
+    const originalPreview = document.getElementById("originalPreview");
+    const previewInfo = document.getElementById("previewInfo");
+
+    let sourceImage = null;
+    let sourceFileName = "image";
+    let splitResults = [];
+
+    modeSelect.addEventListener("change", () => {
+      if (modeSelect.value === "fixed") {
+        lengthBox.style.display = "flex";
+      } else {
+        lengthBox.style.display = "none";
+      }
+    });
+
+    imageInput.addEventListener("change", () => {
+      const file = imageInput.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      sourceFileName = file.name.replace(/\.[^/.]+$/, "") || "image";
+
+      const reader = new FileReader();
+
+      reader.onload = function (event) {
+        const img = new Image();
+
+        img.onload = function () {
+          sourceImage = img;
+          clearResultsOnly();
+
+          originalPreview.src = event.target.result;
+          originalPreviewBox.style.display = "block";
+
+          statusEl.innerHTML =
+            "图片已加载：宽 " +
+            img.width +
+            "px，高 " +
+            img.height +
+            "px。";
+        };
+
+        img.onerror = function () {
+          sourceImage = null;
+          statusEl.textContent = "图片加载失败，请换一张图片。";
+        };
+
+        img.src = event.target.result;
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    splitBtn.addEventListener("click", () => {
+      if (!sourceImage) {
+        statusEl.textContent = "请先上传一张图片。";
+        return;
+      }
+
+      const direction = directionSelect.value;
+      const mode = modeSelect.value;
+      const count = parseInt(countInput.value, 10);
+      const fixedLength = parseInt(cutLengthInput.value, 10);
+
+      if (!Number.isInteger(count) || count <= 0) {
+        statusEl.textContent = "请输入有效的切割图片数量。";
+        return;
+      }
+
+      if (mode === "fixed" && (!Number.isInteger(fixedLength) || fixedLength <= 0)) {
+        statusEl.textContent = "请输入有效的切割长度。";
+        return;
+      }
+
+      clearResultsOnly();
+
+      const imageWidth = sourceImage.width;
+      const imageHeight = sourceImage.height;
+
+      const totalLength = direction === "horizontal" ? imageHeight : imageWidth;
+      const fixedSideLength = direction === "horizontal" ? imageWidth : imageHeight;
+
+      let segments = [];
+
+      if (mode === "average") {
+        const baseLength = Math.floor(totalLength / count);
+        let start = 0;
+
+        for (let i = 0; i < count; i++) {
+          let length;
+
+          if (i === count - 1) {
+            length = totalLength - start;
+          } else {
+            length = baseLength;
+          }
+
+          if (length > 0) {
+            segments.push({
+              start: start,
+              length: length
+            });
+          }
+
+          start += length;
+        }
+      } else {
+        let start = 0;
+        let fixedPieces = 0;
+
+        while (start + fixedLength <= totalLength && fixedPieces < count) {
+          segments.push({
+            start: start,
+            length: fixedLength
+          });
+
+          start += fixedLength;
+          fixedPieces++;
+        }
+
+        if (start < totalLength) {
+          segments.push({
+            start: start,
+            length: totalLength - start
+          });
+        }
+      }
+
+      if (segments.length === 0) {
+        statusEl.textContent = "没有可切割的内容，请检查参数。";
+        return;
+      }
+
+      segments.forEach((segment, index) => {
+        let sx;
+        let sy;
+        let sw;
+        let sh;
+        let outputWidth;
+        let outputHeight;
+
+        if (direction === "horizontal") {
+          sx = 0;
+          sy = segment.start;
+          sw = imageWidth;
+          sh = segment.length;
+          outputWidth = imageWidth;
+          outputHeight = segment.length;
+        } else {
+          sx = segment.start;
+          sy = 0;
+          sw = segment.length;
+          sh = imageHeight;
+          outputWidth = segment.length;
+          outputHeight = imageHeight;
+        }
+
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+
+        ctx.clearRect(0, 0, outputWidth, outputHeight);
+        ctx.drawImage(
+          sourceImage,
+          sx,
+          sy,
+          sw,
+          sh,
+          0,
+          0,
+          outputWidth,
+          outputHeight
+        );
+
+        const dataUrl = canvas.toDataURL("image/png");
+
+        splitResults.push({
+          index: index + 1,
+          dataUrl: dataUrl,
+          width: outputWidth,
+          height: outputHeight,
+          start: segment.start,
+          length: segment.length
+        });
+      });
+
+      renderResults();
+
+      const directionText = direction === "horizontal" ? "横向切割，上下切" : "竖向切割，左右切";
+      const modeText = mode === "average" ? "平均切割" : "按指定长度切割";
+
+      previewInfo.style.display = "block";
+      previewInfo.innerHTML =
+        "<strong>切割完成</strong><br>" +
+        "原图尺寸：" +
+        imageWidth +
+        " × " +
+        imageHeight +
+        " px<br>" +
+        "切割方向：" +
+        directionText +
+        "<br>" +
+        "切割模式：" +
+        modeText +
+        "<br>" +
+        "实际输出：" +
+        splitResults.length +
+        " 张";
+
+      statusEl.textContent = "切割完成，共生成 " + splitResults.length + " 张图片。";
+    });
+
+    downloadZipBtn.addEventListener("click", async () => {
+      if (splitResults.length === 0) {
+        statusEl.textContent = "请先切割图片后再下载 ZIP。";
+        return;
+      }
+
+      if (typeof JSZip === "undefined") {
+        statusEl.textContent = "ZIP 组件加载失败，请检查网络或单张下载。";
+        return;
+      }
+
+      const zip = new JSZip();
+
+      splitResults.forEach((item) => {
+        const base64 = item.dataUrl.split(",")[1];
+        const fileName =
+          sourceFileName +
+          "_part_" +
+          String(item.index).padStart(2, "0") +
+          "_" +
+          item.width +
+          "x" +
+          item.height +
+          ".png";
+
+        zip.file(fileName, base64, { base64: true });
+      });
+
+      statusEl.textContent = "正在生成 ZIP，请稍候...";
+
+      try {
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = sourceFileName + "_split_images.zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "ZIP 下载已开始。";
+      } catch (error) {
+        statusEl.textContent = "ZIP 生成失败：" + error.message;
+      }
+    });
+
+    clearBtn.addEventListener("click", () => {
+      clearResultsOnly();
+      imageInput.value = "";
+      sourceImage = null;
+      originalPreview.src = "";
+      originalPreviewBox.style.display = "none";
+      statusEl.textContent = "已清空，请重新上传图片。";
+    });
+
+    function clearResultsOnly() {
+      splitResults = [];
+      resultGrid.innerHTML = "";
+      previewInfo.style.display = "none";
+      previewInfo.innerHTML = "";
+    }
+
+    function renderResults() {
+      resultGrid.innerHTML = "";
+
+      splitResults.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "result-card";
+
+        const img = document.createElement("img");
+        img.src = item.dataUrl;
+        img.alt = "切割结果 " + item.index;
+
+        const meta = document.createElement("div");
+        meta.className = "result-meta";
+        meta.innerHTML =
+          "<strong>第 " +
+          item.index +
+          " 张</strong><br>" +
+          "尺寸：" +
+          item.width +
+          " × " +
+          item.height +
+          " px<br>" +
+          "起点：" +
+          item.start +
+          " px<br>" +
+          "切割长度：" +
+          item.length +
+          " px";
+
+        const download = document.createElement("a");
+        download.className = "download-link";
+        download.href = item.dataUrl;
+        download.download =
+          sourceFileName +
+          "_part_" +
+          String(item.index).padStart(2, "0") +
+          "_" +
+          item.width +
+          "x" +
+          item.height +
+          ".png";
+        download.textContent = "下载这张";
+
+        card.appendChild(img);
+        card.appendChild(meta);
+        card.appendChild(download);
+
+        resultGrid.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amazon Title 词根检查工具</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --soft-success: #ecfdf5;
+      --soft-danger: #fef2f2;
+      --soft-warning: #fffbeb;
+      --code: #111827;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+        Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      color: white;
+      padding: 28px 20px;
+    }
+
+    header .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0.3px;
+    }
+
+    header p {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 20px auto 60px;
+      padding: 0 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      padding: 18px;
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 6px 0 12px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 230px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+        "Courier New", monospace;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+    }
+
+    textarea:focus,
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      background: var(--primary);
+      color: white;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    button.secondary {
+      background: #374151;
+    }
+
+    button.secondary:hover {
+      background: #111827;
+    }
+
+    button.light {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    button.light:hover {
+      background: #d1d5db;
+    }
+
+    .settings {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    @media (min-width: 900px) {
+      .settings {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 13px;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+
+    .checkboxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .checkboxes label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    @media (min-width: 700px) {
+      .summary {
+        grid-template-columns: repeat(5, 1fr);
+      }
+    }
+
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .metric .num {
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .metric .label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-height: 620px;
+      background: white;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 1200px;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f9fafb;
+      z-index: 2;
+      font-size: 12px;
+      color: #374151;
+      white-space: nowrap;
+    }
+
+    tr.pass {
+      background: var(--soft-success);
+    }
+
+    tr.fail {
+      background: var(--soft-danger);
+    }
+
+    tr.warn {
+      background: var(--soft-warning);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.pass {
+      color: #166534;
+      background: #dcfce7;
+    }
+
+    .badge.fail {
+      color: #991b1b;
+      background: #fee2e2;
+    }
+
+    .badge.warn {
+      color: #92400e;
+      background: #fef3c7;
+    }
+
+    .missing {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .ok {
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    .over {
+      color: var(--danger);
+      font-weight: 800;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    details {
+      margin-top: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    code {
+      background: #f3f4f6;
+      color: var(--code);
+      padding: 2px 5px;
+      border-radius: 5px;
+    }
+
+    .error-box {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      font-size: 13px;
+    }
+
+    .footer-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Amazon 标题词根检查工具</h1>
+      <p>
+        对比 <strong>旧Title</strong> 与 <strong>新Title + Item Highlights</strong>，检查去停用词、词根归一、去重后是否有词根减少。
+      </p>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <h2>1. 粘贴表格数据</h2>
+        <div class="hint">
+          支持从 Excel / WPS / Google Sheets 直接复制粘贴。表头需包含：
+          <code>旧Title</code>、<code>新Title</code>、<code>Item Highlights</code>。
+          也可额外包含 <code>SKU</code>、<code>ASIN</code>、<code>品名</code> 等列。
+        </div>
+
+        <textarea id="inputData" placeholder="请粘贴表格，例如：
+SKU	ASIN	旧Title	新Title	Item Highlights
+BAB10001	B0FRGJT4TW	Trifold Pack and Play Mattress 38x26, Dual Sided Foldable Pack N Play Mattress Pad for Baby and Toddler	Trifold Pack and Play Mattress 38x26	Dual Sided Foldable Pack N Play Mattress Pad for Baby and Toddler"></textarea>
+
+        <div class="controls">
+          <button id="checkBtn">开始检查</button>
+          <button class="secondary" id="exportBtn">导出结果 CSV</button>
+          <button class="light" id="sampleBtn">填入示例</button>
+          <button class="light" id="clearBtn">清空</button>
+        </div>
+
+        <div id="errorBox" class="error-box"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. 检查规则设置</h2>
+
+        <div class="settings">
+          <div>
+            <label for="stopWords">停用词 / 介词 / 冠词 / 连词</label>
+            <input id="stopWords" type="text" />
+            <div class="hint">
+              这些词不会参与词根对比。你可以根据自己的规则增删。
+            </div>
+          </div>
+
+          <div>
+            <label for="ignoreWords">额外忽略词</label>
+            <input id="ignoreWords" type="text" placeholder="例如：plentivive,picopandax" />
+            <div class="hint">
+              如果你不想检查品牌词、SKU词、颜色词等，可放这里。默认不忽略品牌。
+            </div>
+          </div>
+        </div>
+
+        <div class="checkboxes">
+          <label>
+            <input type="checkbox" id="normalizePlural" checked />
+            单复数归一
+          </label>
+          <label>
+            <input type="checkbox" id="normalizeIngEd" checked />
+            简单 ing / ed 词形归一
+          </label>
+          <label>
+            <input type="checkbox" id="splitHyphen" checked />
+            拆分连字符词
+          </label>
+          <label>
+            <input type="checkbox" id="keepNumbers" checked />
+            保留数字与尺寸
+          </label>
+          <label>
+            <input type="checkbox" id="caseInsensitive" checked />
+            忽略大小写
+          </label>
+        </div>
+
+        <div class="footer-note">
+          字符数规则：<code>新Title</code> 建议 ≤75，<code>Item Highlights</code> 建议 ≤125，含空格和标点。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3. 汇总结果</h2>
+        <div class="summary">
+          <div class="metric">
+            <div class="num" id="totalCount">0</div>
+            <div class="label">总行数</div>
+          </div>
+          <div class="metric">
+            <div class="num ok" id="passCount">0</div>
+            <div class="label">词根通过</div>
+          </div>
+          <div class="metric">
+            <div class="num missing" id="failCount">0</div>
+            <div class="label">词根缺失</div>
+          </div>
+          <div class="metric">
+            <div class="num" id="titleOverCount">0</div>
+            <div class="label">新Title超75</div>
+          </div>
+          <div class="metric">
+            <div class="num" id="highlightOverCount">0</div>
+            <div class="label">Highlights超125</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>4. 明细结果</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>SKU</th>
+                <th>ASIN</th>
+                <th>状态</th>
+                <th>缺失词根</th>
+                <th>旧词根数</th>
+                <th>新词根数</th>
+                <th>新Title字符</th>
+                <th>Highlights字符</th>
+                <th>旧Title</th>
+                <th>新Title</th>
+                <th>Item Highlights</th>
+                <th>词根详情</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody">
+              <tr>
+                <td colspan="13" class="small">暂无结果，请先粘贴数据并点击“开始检查”。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const defaultStopWords = [
+      "a", "an", "the",
+      "and", "or", "but",
+      "for", "to", "of", "in", "on", "at", "by", "from", "with", "without",
+      "into", "onto", "over", "under", "up", "down", "out", "off",
+      "as", "is", "are", "be", "was", "were",
+      "this", "that", "these", "those",
+      "it", "its",
+      "your", "our",
+      "w", "w/", "w/o",
+      "plus"
+    ];
+
+    const irregularMap = {
+      children: "child",
+      kids: "kid",
+      toddlers: "toddler",
+      babies: "baby",
+      boys: "boy",
+      girls: "girl",
+      men: "man",
+      women: "woman",
+      feet: "foot",
+      knives: "knife",
+      shelves: "shelf",
+      leaves: "leaf",
+      accessories: "accessory",
+      batteries: "battery",
+      boxes: "box",
+      churches: "church",
+      mattresses: "mattress"
+    };
+
+    let lastResults = [];
+
+    document.getElementById("stopWords").value = defaultStopWords.join(", ");
+
+    document.getElementById("checkBtn").addEventListener("click", runCheck);
+    document.getElementById("exportBtn").addEventListener("click", exportCSV);
+    document.getElementById("sampleBtn").addEventListener("click", fillSample);
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      document.getElementById("inputData").value = "";
+      lastResults = [];
+      renderResults([]);
+      hideError();
+    });
+
+    function fillSample() {
+      document.getElementById("inputData").value =
+`SKU\tASIN\t旧Title\t新Title\tItem Highlights
+BAB10001\tB0FRGJT4TW\tTrifold Pack and Play Mattress 38x26, Dual Sided Foldable Pack N Play Mattress Pad for Baby and Toddler, Playard Playpen Mat, Waterproof Washable Portable Travel Crib Mattress Topper with Carry Bag\tTrifold Pack and Play Mattress 38x26\tDual Sided Foldable Pack N Play Mattress Pad for Baby and Toddler, Playard Playpen Mat, Waterproof Washable Carry Bag
+PET10056\tB0FS7TG9QR\tLarge Waterproof Outdoor Dog Bed (57""x39""), Portable & Washable Travel Pet Mat for Camping, Foldable Non-Slip Car Seat & Crate Liner for Large Medium Dogs, Includes Carry Bag (Blue)\tLarge Waterproof Outdoor Dog Bed 57""x39""\tPortable & Washable Travel Pet Mat for Camping, Foldable Non-Slip Car Seat & Crate Liner for Large Medium Dogs, Blue`;
+    }
+
+    function runCheck() {
+      hideError();
+
+      const raw = document.getElementById("inputData").value.trim();
+      if (!raw) {
+        showError("请先粘贴表格数据。");
+        return;
+      }
+
+      try {
+        const rows = parseTable(raw);
+        if (rows.length < 2) {
+          showError("没有识别到有效表格。请确认第一行为表头，后面至少有一行数据。");
+          return;
+        }
+
+        const headers = rows[0].map(h => cleanHeader(h));
+        const dataRows = rows.slice(1).filter(row => row.some(cell => String(cell || "").trim() !== ""));
+
+        const oldIdx = findColumn(headers, ["旧title", "旧标题", "oldtitle", "old title", "原标题", "title"]);
+        const newIdx = findColumn(headers, ["新title", "新标题", "newtitle", "new title"]);
+        const highlightIdx = findColumn(headers, [
+          "item highlights", "itemhighlights", "highlights", "商品亮点", "亮点"
+        ]);
+
+        const skuIdx = findColumn(headers, ["sku", "msku"]);
+        const asinIdx = findColumn(headers, ["asin"]);
+
+        if (oldIdx === -1 || newIdx === -1 || highlightIdx === -1) {
+          showError(
+            "未找到必要列。请确认表头包含：旧Title、新Title、Item Highlights。当前识别到的表头：" +
+            headers.join(" | ")
+          );
+          return;
+        }
+
+        const settings = getSettings();
+
+        lastResults = dataRows.map((row, i) => {
+          const oldTitle = getCell(row, oldIdx);
+          const newTitle = getCell(row, newIdx);
+          const highlights = getCell(row, highlightIdx);
+          const combinedNew = [newTitle, highlights].filter(Boolean).join(" ");
+
+          const oldRoots = extractRoots(oldTitle, settings);
+          const newRoots = extractRoots(combinedNew, settings);
+
+          const missing = oldRoots.filter(root => !newRoots.includes(root));
+          const titleLen = newTitle.length;
+          const highlightLen = highlights.length;
+
+          return {
+            rowNum: i + 1,
+            sku: skuIdx >= 0 ? getCell(row, skuIdx) : "",
+            asin: asinIdx >= 0 ? getCell(row, asinIdx) : "",
+            oldTitle,
+            newTitle,
+            highlights,
+            oldRoots,
+            newRoots,
+            missing,
+            titleLen,
+            highlightLen,
+            pass: missing.length === 0,
+            titleOver: titleLen > 75,
+            highlightOver: highlightLen > 125
+          };
+        });
+
+        renderResults(lastResults);
+      } catch (err) {
+        showError("检查失败：" + err.message);
+      }
+    }
+
+    function getSettings() {
+      const stopWords = splitWordList(document.getElementById("stopWords").value);
+      const ignoreWords = splitWordList(document.getElementById("ignoreWords").value);
+
+      return {
+        stopSet: new Set([...stopWords, ...ignoreWords].map(w => normalizeBase(w))),
+        normalizePlural: document.getElementById("normalizePlural").checked,
+        normalizeIngEd: document.getElementById("normalizeIngEd").checked,
+        splitHyphen: document.getElementById("splitHyphen").checked,
+        keepNumbers: document.getElementById("keepNumbers").checked,
+        caseInsensitive: document.getElementById("caseInsensitive").checked
+      };
+    }
+
+    function splitWordList(text) {
+      return String(text || "")
+        .split(/[,，\s]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function parseTable(text) {
+      const delimiter = detectDelimiter(text);
+      if (delimiter === "\t") {
+        return parseTSV(text);
+      }
+      return parseCSV(text, delimiter);
+    }
+
+    function detectDelimiter(text) {
+      const firstLine = text.split(/\r?\n/)[0] || "";
+      const tabCount = (firstLine.match(/\t/g) || []).length;
+      const commaCount = (firstLine.match(/,/g) || []).length;
+      const semicolonCount = (firstLine.match(/;/g) || []).length;
+
+      if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return "\t";
+      if (semicolonCount > commaCount) return ";";
+      return ",";
+    }
+
+    function parseTSV(text) {
+      return text.split(/\r?\n/).map(line => line.split("\t").map(cell => unquote(cell.trim())));
+    }
+
+    function parseCSV(text, delimiter) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            cell += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === delimiter && !inQuotes) {
+          row.push(cell);
+          cell = "";
+        } else if ((char === "\n" || char === "\r") && !inQuotes) {
+          if (char === "\r" && next === "\n") i++;
+          row.push(cell);
+          rows.push(row);
+          row = [];
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+
+      row.push(cell);
+      rows.push(row);
+
+      return rows.map(r => r.map(c => unquote(c.trim())));
+    }
+
+    function unquote(value) {
+      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        return value.slice(1, -1).replace(/""/g, '"');
+      }
+      return value;
+    }
+
+    function cleanHeader(header) {
+      return String(header || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+    }
+
+    function findColumn(headers, candidates) {
+      const normalizedCandidates = candidates.map(c => c.toLowerCase().replace(/\s+/g, ""));
+      
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        const compact = h.replace(/\s+/g, "");
+
+        if (normalizedCandidates.includes(h) || normalizedCandidates.includes(compact)) {
+          return i;
+        }
+      }
+
+      for (let i = 0; i < headers.length; i++) {
+        const compact = headers[i].replace(/\s+/g, "");
+        for (const c of normalizedCandidates) {
+          if (compact.includes(c)) return i;
+        }
+      }
+
+      return -1;
+    }
+
+    function getCell(row, idx) {
+      return String(row[idx] || "").trim();
+    }
+
+    function extractRoots(text, settings) {
+      let input = String(text || "");
+
+      if (settings.caseInsensitive) {
+        input = input.toLowerCase();
+      }
+
+      input = input
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/&/g, " and ")
+        .replace(/\+/g, " plus ");
+
+      if (settings.splitHyphen) {
+        input = input.replace(/[-–—_/]/g, " ");
+      } else {
+        input = input.replace(/[–—_/]/g, " ");
+      }
+
+      const tokenRegex = settings.keepNumbers
+        ? /[a-z0-9]+(?:'[a-z]+)?/gi
+        : /[a-z]+(?:'[a-z]+)?/gi;
+
+      const rawTokens = input.match(tokenRegex) || [];
+
+      const roots = [];
+      const seen = new Set();
+
+      for (let token of rawTokens) {
+        token = token.replace(/^'+|'+$/g, "");
+        if (!token) continue;
+
+        let root = normalizeWord(token, settings);
+        if (!root) continue;
+
+        if (settings.stopSet.has(root)) continue;
+        if (!settings.keepNumbers && /^\d+$/.test(root)) continue;
+
+        if (!seen.has(root)) {
+          seen.add(root);
+          roots.push(root);
+        }
+      }
+
+      return roots;
+    }
+
+    function normalizeBase(word) {
+      return String(word || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "");
+    }
+
+    function normalizeWord(word, settings) {
+      let w = normalizeBase(word);
+      if (!w) return "";
+
+      if (irregularMap[w]) {
+        return irregularMap[w];
+      }
+
+      if (/^\d+$/.test(w)) {
+        return w;
+      }
+
+      if (/^\d+[a-z]+$/.test(w) || /^[a-z]+\d+[a-z0-9]*$/.test(w)) {
+        return w;
+      }
+
+      if (settings.normalizePlural) {
+        w = normalizePlural(w);
+      }
+
+      if (settings.normalizeIngEd) {
+        w = normalizeIngEd(w);
+      }
+
+      return w;
+    }
+
+    function normalizePlural(w) {
+      if (w.length <= 3) return w;
+
+      if (w.endsWith("ies") && w.length > 4) {
+        return w.slice(0, -3) + "y";
+      }
+
+      if (w.endsWith("ves") && w.length > 4) {
+        return w.slice(0, -3) + "f";
+      }
+
+      if (
+        w.endsWith("es") &&
+        (
+          w.endsWith("ches") ||
+          w.endsWith("shes") ||
+          w.endsWith("xes") ||
+          w.endsWith("ses") ||
+          w.endsWith("zes")
+        )
+      ) {
+        return w.slice(0, -2);
+      }
+
+      if (w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") && !w.endsWith("is")) {
+        return w.slice(0, -1);
+      }
+
+      return w;
+    }
+
+    function normalizeIngEd(w) {
+      if (w.length <= 5) return w;
+
+      if (w.endsWith("ing") && w.length > 6) {
+        let base = w.slice(0, -3);
+        if (base.length > 3 && base[base.length - 1] === base[base.length - 2]) {
+          base = base.slice(0, -1);
+        }
+        return base;
+      }
+
+      if (w.endsWith("ed") && w.length > 5) {
+        let base = w.slice(0, -2);
+        if (base.length > 3 && base[base.length - 1] === base[base.length - 2]) {
+          base = base.slice(0, -1);
+        }
+        return base;
+      }
+
+      return w;
+    }
+
+    function renderResults(results) {
+      const tbody = document.getElementById("resultBody");
+
+      document.getElementById("totalCount").textContent = results.length;
+      document.getElementById("passCount").textContent = results.filter(r => r.pass).length;
+      document.getElementById("failCount").textContent = results.filter(r => !r.pass).length;
+      document.getElementById("titleOverCount").textContent = results.filter(r => r.titleOver).length;
+      document.getElementById("highlightOverCount").textContent = results.filter(r => r.highlightOver).length;
+
+      if (!results.length) {
+        tbody.innerHTML = `<tr><td colspan="13" class="small">暂无结果，请先粘贴数据并点击“开始检查”。</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = results.map(r => {
+        const rowClass = !r.pass ? "fail" : (r.titleOver || r.highlightOver ? "warn" : "pass");
+        const status = !r.pass
+          ? `<span class="badge fail">词根缺失</span>`
+          : (r.titleOver || r.highlightOver
+              ? `<span class="badge warn">长度警告</span>`
+              : `<span class="badge pass">通过</span>`);
+
+        const missingText = r.missing.length
+          ? `<span class="missing">${escapeHtml(r.missing.join(", "))}</span>`
+          : `<span class="ok">无</span>`;
+
+        const titleLen = r.titleOver
+          ? `<span class="over">${r.titleLen}</span>`
+          : r.titleLen;
+
+        const highlightLen = r.highlightOver
+          ? `<span class="over">${r.highlightLen}</span>`
+          : r.highlightLen;
+
+        return `
+          <tr class="${rowClass}">
+            <td>${r.rowNum}</td>
+            <td>${escapeHtml(r.sku)}</td>
+            <td>${escapeHtml(r.asin)}</td>
+            <td>${status}</td>
+            <td>${missingText}</td>
+            <td>${r.oldRoots.length}</td>
+            <td>${r.newRoots.length}</td>
+            <td>${titleLen}</td>
+            <td>${highlightLen}</td>
+            <td>${escapeHtml(r.oldTitle)}</td>
+            <td>${escapeHtml(r.newTitle)}</td>
+            <td>${escapeHtml(r.highlights)}</td>
+            <td>
+              <details>
+                <summary>查看</summary>
+                <div class="small">
+                  <strong>旧词根：</strong>${escapeHtml(r.oldRoots.join(", "))}<br />
+                  <strong>新词根：</strong>${escapeHtml(r.newRoots.join(", "))}
+                </div>
+              </details>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function exportCSV() {
+      if (!lastResults.length) {
+        showError("暂无可导出的结果。请先点击“开始检查”。");
+        return;
+      }
+
+      const headers = [
+        "Row",
+        "SKU",
+        "ASIN",
+        "Status",
+        "Missing Roots",
+        "Old Root Count",
+        "New Root Count",
+        "New Title Length",
+        "Item Highlights Length",
+        "Old Title",
+        "New Title",
+        "Item Highlights",
+        "Old Roots",
+        "New Roots"
+      ];
+
+      const rows = lastResults.map(r => [
+        r.rowNum,
+        r.sku,
+        r.asin,
+        r.pass ? "PASS" : "FAIL",
+        r.missing.join(" "),
+        r.oldRoots.length,
+        r.newRoots.length,
+        r.titleLen,
+        r.highlightLen,
+        r.oldTitle,
+        r.newTitle,
+        r.highlights,
+        r.oldRoots.join(" "),
+        r.newRoots.join(" ")
+      ]);
+
+      const csv = [headers, ...rows]
+        .map(row => row.map(csvEscape).join(","))
+        .join("\n");
+
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "title-root-check-results.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(value) {
+      const s = String(value ?? "");
+      if (/[",\n\r]/.test(s)) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function showError(message) {
+      const box = document.getElementById("errorBox");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    function hideError() {
+      const box = document.getElementById("errorBox");
+      box.textContent = "";
+      box.style.display = "none";
+    }
+  </script>
+</body>
+</html>

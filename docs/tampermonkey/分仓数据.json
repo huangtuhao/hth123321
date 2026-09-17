@@ -1,0 +1,1617 @@
+{
+    "shipmentCount": 5,
+    "fees": [
+        {
+            "target": "入库配置费",
+            "type": "FEE",
+            "amount": 0,
+            "code": "USD"
+        }
+    ],
+    "discounts": [],
+    "feeCount": 0,
+    "status": "OFFERED",
+    "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+    "shipmentIds": [
+        "sh0a249ca8-caf2-42fc-8e8e-c0756363993b",
+        "sh6bc867d5-1f2c-48a5-9c24-58394c5ea2ce",
+        "sh88b92991-3f54-4715-9947-de0cd7e320ab",
+        "shafb198cd-9aeb-4619-93dc-2d9c2206e3cc",
+        "she74ca567-5d46-47c4-aa55-42a8d5962106"
+    ],
+    "packingGroupIds": [
+        "pg9ad7009e-e39f-44e8-8849-7d5af3568d37"
+    ],
+    "supportedTransportations": "",
+    "unSupportedDeliveryWindows": "2026-09-13~2026-09-20",
+    "expiration": "2026-09-21 00:02:50",
+    "shipmentInformationList": [
+        {
+            "inboundPlanId": "wfbecd0f02-8ba5-4e9b-b64a-cd465643eafc",
+            "sid": 11681,
+            "shipmentName": "货件1",
+            "shipmentId": "sh0a249ca8-caf2-42fc-8e8e-c0756363993b",
+            "wareHouseId": "IMS1",
+            "address": {
+                "addressLine1": "11505 Progress Way",
+                "addressLine2": "",
+                "city": "OLIVE BRANCH",
+                "companyName": "",
+                "countryCode": "US",
+                "name": null,
+                "postalCode": "38654-2510",
+                "stateOrProvinceCode": "MS",
+                "phoneNumber": null,
+                "email": ""
+            },
+            "itemCount": null,
+            "itemQuantity": null,
+            "itemList": [
+                {
+                    "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                    "msku": "83-ELX5-095A",
+                    "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                    "fnsku": "X0054S9EFV",
+                    "asin": "B0H2W98SSS",
+                    "sku": "TOY10078",
+                    "parentAsin": "B0H2W98SSS",
+                    "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                    "pid": 604619,
+                    "quantity": 72,
+                    "labelOwner": null,
+                    "prepOwner": null,
+                    "groupId": null,
+                    "shipmentName": null,
+                    "productId": null,
+                    "shipmentId": "sh0a249ca8-caf2-42fc-8e8e-c0756363993b",
+                    "parcelType": null,
+                    "boxQuantity": null,
+                    "quantityInBox": null,
+                    "weight": null,
+                    "length": null,
+                    "width": null,
+                    "height": null,
+                    "sort": null,
+                    "expiration": null,
+                    "is_combo": null,
+                    "_XID": "row_61"
+                }
+            ],
+            "postalCodeMark": "东部",
+            "supportedTransportations": null,
+            "volumeCount": "1.06",
+            "lengthUnit": "M³",
+            "weightCount": "112.50",
+            "weightUnit": "KG",
+            "positionType": "1",
+            "startTime": "",
+            "endTime": "",
+            "mskuCount": 1,
+            "declareQuantity": 72,
+            "status": "待申报",
+            "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+            "warehouseId": "IMS1",
+            "shippingMode": "GROUND_SMALL_PARCEL",
+            "shippingSolution": "USE_YOUR_OWN_CARRIER",
+            "shipingTime": "",
+            "transportationMode": "",
+            "alphaCode": "",
+            "contactInformation": {
+                "name": "LeqiWeixin",
+                "phoneNumber": "18719440153",
+                "email": ""
+            },
+            "paperType": "PackageLabel_Thermal_AK100",
+            "cardPaperType": "PackageLabel_Plain_Paper"
+        },
+        {
+            "inboundPlanId": "wfbecd0f02-8ba5-4e9b-b64a-cd465643eafc",
+            "sid": 11681,
+            "shipmentName": "货件2",
+            "shipmentId": "sh88b92991-3f54-4715-9947-de0cd7e320ab",
+            "wareHouseId": "ITX3",
+            "address": {
+                "addressLine1": "8590 NE 24th Ave",
+                "addressLine2": "",
+                "city": "AMARILLO",
+                "companyName": "",
+                "countryCode": "US",
+                "name": null,
+                "postalCode": "79108-7749",
+                "stateOrProvinceCode": "TX",
+                "phoneNumber": null,
+                "email": ""
+            },
+            "itemCount": null,
+            "itemQuantity": null,
+            "itemList": [
+                {
+                    "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                    "msku": "83-ELX5-095A",
+                    "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                    "fnsku": "X0054S9EFV",
+                    "asin": "B0H2W98SSS",
+                    "sku": "TOY10078",
+                    "parentAsin": "B0H2W98SSS",
+                    "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                    "pid": 604619,
+                    "quantity": 72,
+                    "labelOwner": null,
+                    "prepOwner": null,
+                    "groupId": null,
+                    "shipmentName": null,
+                    "productId": null,
+                    "shipmentId": "sh88b92991-3f54-4715-9947-de0cd7e320ab",
+                    "parcelType": null,
+                    "boxQuantity": null,
+                    "quantityInBox": null,
+                    "weight": null,
+                    "length": null,
+                    "width": null,
+                    "height": null,
+                    "sort": null,
+                    "expiration": null,
+                    "is_combo": null,
+                    "_XID": "row_68"
+                }
+            ],
+            "postalCodeMark": "中部",
+            "supportedTransportations": null,
+            "volumeCount": "1.06",
+            "lengthUnit": "M³",
+            "weightCount": "112.50",
+            "weightUnit": "KG",
+            "positionType": "1",
+            "startTime": "",
+            "endTime": "",
+            "mskuCount": 1,
+            "declareQuantity": 72,
+            "status": "待申报",
+            "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+            "warehouseId": "ITX3",
+            "shippingMode": "GROUND_SMALL_PARCEL",
+            "shippingSolution": "USE_YOUR_OWN_CARRIER",
+            "shipingTime": "",
+            "transportationMode": "",
+            "alphaCode": "",
+            "contactInformation": {
+                "name": "LeqiWeixin",
+                "phoneNumber": "18719440153",
+                "email": ""
+            },
+            "paperType": "PackageLabel_Thermal_AK100",
+            "cardPaperType": "PackageLabel_Plain_Paper"
+        },
+        {
+            "inboundPlanId": "wfbecd0f02-8ba5-4e9b-b64a-cd465643eafc",
+            "sid": 11681,
+            "shipmentName": "货件3",
+            "shipmentId": "sh6bc867d5-1f2c-48a5-9c24-58394c5ea2ce",
+            "wareHouseId": "IMI1",
+            "address": {
+                "addressLine1": "6500 W Mt Hope Hwy",
+                "addressLine2": "",
+                "city": "LANSING",
+                "companyName": "",
+                "countryCode": "US",
+                "name": null,
+                "postalCode": "48917-8539",
+                "stateOrProvinceCode": "MI",
+                "phoneNumber": null,
+                "email": ""
+            },
+            "itemCount": null,
+            "itemQuantity": null,
+            "itemList": [
+                {
+                    "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                    "msku": "83-ELX5-095A",
+                    "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                    "fnsku": "X0054S9EFV",
+                    "asin": "B0H2W98SSS",
+                    "sku": "TOY10078",
+                    "parentAsin": "B0H2W98SSS",
+                    "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                    "pid": 604619,
+                    "quantity": 104,
+                    "labelOwner": null,
+                    "prepOwner": null,
+                    "groupId": null,
+                    "shipmentName": null,
+                    "productId": null,
+                    "shipmentId": "sh6bc867d5-1f2c-48a5-9c24-58394c5ea2ce",
+                    "parcelType": null,
+                    "boxQuantity": null,
+                    "quantityInBox": null,
+                    "weight": null,
+                    "length": null,
+                    "width": null,
+                    "height": null,
+                    "sort": null,
+                    "expiration": null,
+                    "is_combo": null
+                }
+            ],
+            "postalCodeMark": "中部",
+            "supportedTransportations": null,
+            "volumeCount": "1.53",
+            "lengthUnit": "M³",
+            "weightCount": "162.50",
+            "weightUnit": "KG",
+            "positionType": "1",
+            "startTime": "",
+            "endTime": "",
+            "mskuCount": 1,
+            "declareQuantity": 104,
+            "status": "待申报",
+            "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+            "warehouseId": "IMI1",
+            "shippingMode": "GROUND_SMALL_PARCEL",
+            "shippingSolution": "USE_YOUR_OWN_CARRIER",
+            "shipingTime": "",
+            "transportationMode": "",
+            "alphaCode": "",
+            "contactInformation": {
+                "name": "LeqiWeixin",
+                "phoneNumber": "18719440153",
+                "email": ""
+            },
+            "paperType": "PackageLabel_Thermal_AK100",
+            "cardPaperType": "PackageLabel_Plain_Paper"
+        },
+        {
+            "inboundPlanId": "wfbecd0f02-8ba5-4e9b-b64a-cd465643eafc",
+            "sid": 11681,
+            "shipmentName": "货件4",
+            "shipmentId": "she74ca567-5d46-47c4-aa55-42a8d5962106",
+            "wareHouseId": "IPA1",
+            "address": {
+                "addressLine1": "1300 Corporate Way",
+                "addressLine2": "",
+                "city": "OLYPHANT",
+                "companyName": "",
+                "countryCode": "US",
+                "name": null,
+                "postalCode": "18447-2140",
+                "stateOrProvinceCode": "PA",
+                "phoneNumber": null,
+                "email": ""
+            },
+            "itemCount": null,
+            "itemQuantity": null,
+            "itemList": [
+                {
+                    "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                    "msku": "83-ELX5-095A",
+                    "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                    "fnsku": "X0054S9EFV",
+                    "asin": "B0H2W98SSS",
+                    "sku": "TOY10078",
+                    "parentAsin": "B0H2W98SSS",
+                    "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                    "pid": 604619,
+                    "quantity": 104,
+                    "labelOwner": null,
+                    "prepOwner": null,
+                    "groupId": null,
+                    "shipmentName": null,
+                    "productId": null,
+                    "shipmentId": "she74ca567-5d46-47c4-aa55-42a8d5962106",
+                    "parcelType": null,
+                    "boxQuantity": null,
+                    "quantityInBox": null,
+                    "weight": null,
+                    "length": null,
+                    "width": null,
+                    "height": null,
+                    "sort": null,
+                    "expiration": null,
+                    "is_combo": null
+                }
+            ],
+            "postalCodeMark": "东部",
+            "supportedTransportations": null,
+            "volumeCount": "1.53",
+            "lengthUnit": "M³",
+            "weightCount": "162.50",
+            "weightUnit": "KG",
+            "positionType": "1",
+            "startTime": "",
+            "endTime": "",
+            "mskuCount": 1,
+            "declareQuantity": 104,
+            "status": "待申报",
+            "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+            "warehouseId": "IPA1",
+            "shippingMode": "GROUND_SMALL_PARCEL",
+            "shippingSolution": "USE_YOUR_OWN_CARRIER",
+            "shipingTime": "",
+            "transportationMode": "",
+            "alphaCode": "",
+            "contactInformation": {
+                "name": "LeqiWeixin",
+                "phoneNumber": "18719440153",
+                "email": ""
+            },
+            "paperType": "PackageLabel_Thermal_AK100",
+            "cardPaperType": "PackageLabel_Plain_Paper"
+        },
+        {
+            "inboundPlanId": "wfbecd0f02-8ba5-4e9b-b64a-cd465643eafc",
+            "sid": 11681,
+            "shipmentName": "货件5",
+            "shipmentId": "shafb198cd-9aeb-4619-93dc-2d9c2206e3cc",
+            "wareHouseId": "IWA6",
+            "address": {
+                "addressLine1": "1202 S Road 40 E",
+                "addressLine2": "",
+                "city": "PASCO",
+                "companyName": "",
+                "countryCode": "US",
+                "name": null,
+                "postalCode": "99301-6161",
+                "stateOrProvinceCode": "WA",
+                "phoneNumber": null,
+                "email": ""
+            },
+            "itemCount": null,
+            "itemQuantity": null,
+            "itemList": [
+                {
+                    "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                    "msku": "83-ELX5-095A",
+                    "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                    "fnsku": "X0054S9EFV",
+                    "asin": "B0H2W98SSS",
+                    "sku": "TOY10078",
+                    "parentAsin": "B0H2W98SSS",
+                    "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                    "pid": 604619,
+                    "quantity": 48,
+                    "labelOwner": null,
+                    "prepOwner": null,
+                    "groupId": null,
+                    "shipmentName": null,
+                    "productId": null,
+                    "shipmentId": "shafb198cd-9aeb-4619-93dc-2d9c2206e3cc",
+                    "parcelType": null,
+                    "boxQuantity": null,
+                    "quantityInBox": null,
+                    "weight": null,
+                    "length": null,
+                    "width": null,
+                    "height": null,
+                    "sort": null,
+                    "expiration": null,
+                    "is_combo": null
+                }
+            ],
+            "postalCodeMark": "西部",
+            "supportedTransportations": null,
+            "volumeCount": "0.71",
+            "lengthUnit": "M³",
+            "weightCount": "75.00",
+            "weightUnit": "KG",
+            "positionType": "1",
+            "startTime": "",
+            "endTime": "",
+            "mskuCount": 1,
+            "declareQuantity": 48,
+            "status": "待申报",
+            "placementOptionId": "pl4ffd6ff9-c9ba-4fb9-b32c-c3217a467f9d",
+            "warehouseId": "IWA6",
+            "shippingMode": "GROUND_SMALL_PARCEL",
+            "shippingSolution": "USE_YOUR_OWN_CARRIER",
+            "shipingTime": "",
+            "transportationMode": "",
+            "alphaCode": "",
+            "contactInformation": {
+                "name": "LeqiWeixin",
+                "phoneNumber": "18719440153",
+                "email": ""
+            },
+            "paperType": "PackageLabel_Thermal_AK100",
+            "cardPaperType": "PackageLabel_Plain_Paper"
+        }
+    ],
+    "loading": false,
+    "isRestricted": false,
+    "restrictedWarehouseIds": [],
+    "packingBoxInfoList": [
+        {
+            "shipmentId": "sh0a249ca8-caf2-42fc-8e8e-c0756363993b",
+            "weightCount": "112.50",
+            "volumeCount": "1.06",
+            "weightUnit": "KG",
+            "lengthUnit": "M³",
+            "shipmentPackingList": [
+                {
+                    "boxName": "P1 - B25",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B43",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B14",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B47",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B33",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B15",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B21",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B39",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B35",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "shipmentId": "sh88b92991-3f54-4715-9947-de0cd7e320ab",
+            "weightCount": "112.50",
+            "volumeCount": "1.06",
+            "weightUnit": "KG",
+            "lengthUnit": "M³",
+            "shipmentPackingList": [
+                {
+                    "boxName": "P1 - B12",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B46",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B26",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B50",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B11",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B28",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B49",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B48",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B42",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "shipmentId": "sh6bc867d5-1f2c-48a5-9c24-58394c5ea2ce",
+            "weightCount": "162.50",
+            "volumeCount": "1.53",
+            "weightUnit": "KG",
+            "lengthUnit": "M³",
+            "shipmentPackingList": [
+                {
+                    "boxName": "P1 - B41",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B29",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B27",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B17",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B16",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B36",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B32",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B1",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B8",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B38",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B7",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B2",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B44",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "shipmentId": "she74ca567-5d46-47c4-aa55-42a8d5962106",
+            "weightCount": "162.50",
+            "volumeCount": "1.53",
+            "weightUnit": "KG",
+            "lengthUnit": "M³",
+            "shipmentPackingList": [
+                {
+                    "boxName": "P1 - B22",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B37",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B18",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B30",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B19",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B34",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B6",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B40",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B9",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B20",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B5",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B10",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B23",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "shipmentId": "shafb198cd-9aeb-4619-93dc-2d9c2206e3cc",
+            "weightCount": "75.00",
+            "volumeCount": "0.71",
+            "weightUnit": "KG",
+            "lengthUnit": "M³",
+            "shipmentPackingList": [
+                {
+                    "boxName": "P1 - B4",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B13",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B24",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B31",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B3",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                },
+                {
+                    "boxName": "P1 - B45",
+                    "weight": 12.5,
+                    "weightUnit": "KG",
+                    "length": 59,
+                    "width": 42,
+                    "height": 47.5,
+                    "lengthUnit": "CM",
+                    "total": 1,
+                    "productList": [
+                        {
+                            "msku": "83-ELX5-095A",
+                            "fnsku": "X0054S9EFV",
+                            "asin": "B0H2W98SSS",
+                            "parentAsin": "B0H2W98SSS",
+                            "productName": "忙碌桌玩具-森林主题款-TOY10078",
+                            "sku": "TOY10078",
+                            "title": "Wooden Activity Table for Toddlers, 7-in-1 Montessori Sensory Play Table, Baby Standing Activity Center with Bead Maze, Shape Sorter & Spinning Gears, Learning Toys for 3 Year Old Boys Girls",
+                            "url": "https://image.distributetop.com/erp-vue/901595888601981952/20260722/2a0a2b5142a7486994519b7aa6d9d44d.png",
+                            "quantityInBox": 8
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

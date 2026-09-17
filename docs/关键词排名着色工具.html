@@ -307,7 +307,7 @@ function processFile(file) {
       kwColIndex = origHeaders.findIndex(h => h.includes('关键词'));
       if (kwColIndex === -1) kwColIndex = 0; 
 
-      rankColIndex = origHeaders.findIndex(h => h.includes('关键词排名'));
+      rankColIndex = origHeaders.findIndex(h => h.includes('关键词排名') || h.includes('关键词ABA排名'));
       if (rankColIndex === -1) {
         showError('未找到包含「关键词排名」的列，请确认表头名称是否正确');
         return;

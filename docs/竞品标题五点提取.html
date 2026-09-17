@@ -102,7 +102,7 @@
     <div class="tips">
         <b>🤖 智能模式 (支持批量框选/拖拽多份文件)：</b><br>
         1. <b>Search(</b> 或 <b>AI-Competitor</b> 开头：提取 ASIN、商品标题、产品卖点，自动重命名。<br>
-        2. <b>多ASIN对比结果</b> 开头：保留到“周平均搜索量”列，最多截取 150 行。
+        2. <b>多ASIN对比结果</b> 开头：保留到“周平均搜索量”列，最多截取 200 行。
     </div>
 
     <div class="upload-area">
@@ -246,7 +246,7 @@
                                 newRow[k] = row[k];
                             });
                             return newRow;
-                        }).slice(0, 150); 
+                        }).slice(0, 200); 
                     } 
                     else {
                         extractedData = targetData;
