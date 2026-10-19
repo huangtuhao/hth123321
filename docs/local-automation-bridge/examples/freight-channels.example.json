@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "publication_id": "freight-channels-YYYYMMDD",
+  "expected_current_revision": null,
+  "effective_at": "2026-10-19T00:00:00+08:00",
+  "expires_at": "2026-10-26T00:00:00+08:00",
+  "source": {
+    "producer": "freight-quote-collector",
+    "source_ref": "请替换为报价来源说明"
+  },
+  "data": {
+    "currency": "CNY",
+    "channels": [
+      {
+        "name": "示例渠道（发布前请替换）",
+        "price": 0,
+        "unit": "CNY/kg",
+        "notes": "示例文件不应直接用于业务决策"
+      }
+    ]
+  }
+}

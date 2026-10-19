@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "service": {
+    "host": "127.0.0.1",
+    "port": 32145,
+    "max_body_bytes": 134217728,
+    "state_root": "%LOCALAPPDATA%\\LocalAutomationBridge"
+  },
+  "stores": {
+    "lingxing": {
+      "name": "领星业务数据",
+      "root": "C:\\数据\\领星"
+    },
+    "shared": {
+      "name": "业务自动化共享数据",
+      "root": "C:\\数据\\业务自动化"
+    }
+  },
+  "datasets": {
+    "fba_shipments": {
+      "name": "FBA货件",
+      "store": "lingxing",
+      "folder": "FBA数据",
+      "adapter": "fba_shipments_v1"
+    }
+  },
+  "configs": {
+    "freight_channels": {
+      "name": "货代渠道配置",
+      "store": "shared",
+      "folder": "配置\\货代渠道",
+      "max_bytes": 1048576
+    }
+  },
+  "artifact_buckets": {
+    "lingxing_fba": {
+      "name": "领星 FBA 文件",
+      "store": "shared",
+      "folder": "文件\\领星FBA",
+      "max_bytes": 268435456,
+      "allowed_extensions": [".pdf", ".zip", ".xlsx", ".xls", ".csv", ".json"]
+    }
+  },
+  "clients": {
+    "userscript.lingxing.fba.v1": {
+      "name": "领星 FBA 增量导出助手（兼容客户端）",
+      "aliases": ["lingxing-tampermonkey-v1"],
+      "pairing": "legacy_auto",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": ["dataset:write:fba_shipments"]
+    },
+    "userscript.lingxing.automation.v2": {
+      "name": "领星浏览器自动化客户端",
+      "aliases": [],
+      "pairing": "code",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": [
+        "dataset:write:fba_shipments",
+        "config:read:freight_channels",
+        "artifact:write:lingxing_fba"
+      ]
+    }
+  }
+}

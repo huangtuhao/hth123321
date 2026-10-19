@@ -32,6 +32,10 @@
         name: "良逊清关发票模板.xlsx",
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/良逊清关发票模板.xlsx",
       },
+      {
+        name: "中外通清关发票模板.xlsx",
+        url: "https://raw.githubusercontent.com/huangtuhao/hth123321/refs/heads/master/docs/tampermonkey/发票模板/中外通清关发票模板.xlsx",
+      },
     ],
     DEFAULT_BRAND_OPTIONS: ["PlentiVive", "PicoPandax"],
     STORAGE_KEY: "LX_INVOICE_HELPER_DATA_V1",
