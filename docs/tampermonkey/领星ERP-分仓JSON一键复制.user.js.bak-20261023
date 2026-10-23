@@ -1,0 +1,169 @@
+// ==UserScript==
+// @name         领星ERP-分仓JSON一键复制
+// @namespace    http://tampermonkey.net/
+// @version      1.1
+// @description  在领星ERP发货页面一键生成分仓方案JSON（含每个货件的箱数、入库配置费）并复制到剪贴板，便于粘贴到AI工具分析。
+// @author       You
+// @match        *://erp.lingxing.com/*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // ================= 样式 =================
+    const style = document.createElement('style');
+    style.textContent = `
+        .lx-json-panel {
+            position: fixed; bottom: 110px; right: 30px; z-index: 9999;
+            background: #fff; padding: 10px; border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,.15); border: 1px solid #ebeef5;
+            font-family: sans-serif;
+        }
+        .lx-json-btn {
+            padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer;
+            font-size: 13px; font-weight: 600; color: #fff; background: #4f46e5;
+            transition: background .2s; white-space: nowrap;
+        }
+        .lx-json-btn:hover { background: #4338ca; }
+        .lx-json-btn.ok  { background: #10b981; }
+        .lx-json-btn.err { background: #ef4444; }
+    `;
+    document.head.appendChild(style);
+
+    // ================= 取数 =================
+    function getVueCtx() {
+        const wrapper = document.querySelector('.sta-delivery-service-wrapper');
+        return (wrapper && wrapper.__vue__) ? wrapper.__vue__ : null;
+    }
+
+    // 拿到所有分仓方案；列表中缺明细的方案，用当前详情补全
+    function getOptions(vueCtx) {
+        const detail = vueCtx.placementOptionDetail;
+        let options = Array.isArray(vueCtx.placementOptionList)
+            ? vueCtx.placementOptionList.slice()
+            : [];
+
+        options = options.map(o => {
+            const needFill = detail && o.placementOptionId === detail.placementOptionId
+                && (!o.shipmentInformationList || !o.shipmentInformationList.length
+                    || !o.packingBoxInfoList || !o.packingBoxInfoList.length);
+            return needFill ? Object.assign({}, o, {
+                shipmentInformationList: detail.shipmentInformationList,
+                packingBoxInfoList: detail.packingBoxInfoList
+            }) : o;
+        }).filter(o => o
+            && Array.isArray(o.shipmentInformationList)
+            && o.shipmentInformationList.length);
+
+        // 兜底：列表里没有完整方案时，直接用当前详情
+        if (!options.length && detail
+            && Array.isArray(detail.shipmentInformationList)
+            && detail.shipmentInformationList.length) {
+            options = [detail];
+        }
+        return options;
+    }
+
+    // ================= 生成对象 A =================
+    function buildA(options) {
+        return options.map(option => {
+            // 入库配置费：优先取 fees 数组（带币种），兜底用 feeCount
+            const cfgFee = (option.fees || [])
+                .find(f => String(f.target).includes('入库配置费'));
+            return {
+                shipmentCount: option.shipmentCount,                       // 5
+                planName: `${option.shipmentCount}个货件`,                // "5个货件"
+                placementFee: cfgFee
+                    ? Number(cfgFee.amount)
+                    : (Number(option.feeCount) || 0),                     // 入库配置费金额
+                placementFeeCurrency: cfgFee ? cfgFee.code : 'USD',       // 币种
+                shipments: option.shipmentInformationList.map(s => {
+                const boxInfo = (option.packingBoxInfoList || [])
+                    .find(b => b.shipmentId === s.shipmentId);
+                // 箱数 = 各箱型 total 之和
+                const boxCount = boxInfo
+                    ? boxInfo.shipmentPackingList.reduce(
+                        (n, p) => n + (Number(p.total) || 0), 0)
+                    : 0;
+                return {
+                    region: s.postalCodeMark,          // 东部/中部/西部
+                    warehouseCode: s.wareHouseId,      // IMS1
+                    weight: Number(s.weightCount),     // 112.5
+                    weightUnit: s.weightUnit,          // "KG"
+                    volume: Number(s.volumeCount),     // 1.06
+                    volumeUnit: s.lengthUnit,          // "M³"
+                    boxCount                           // 9
+                };
+                })
+            };
+        });
+    }
+
+    // ================= 复制（clipboard API + 兜底） =================
+    async function copyText(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (_) {}
+            document.body.removeChild(ta);
+            return ok;
+        }
+    }
+
+    // ================= 面板与按钮 =================
+    const panel = document.createElement('div');
+    panel.className = 'lx-json-panel';
+    const btn = document.createElement('button');
+    btn.className = 'lx-json-btn';
+    btn.textContent = '📋 复制分仓JSON';
+    panel.appendChild(btn);
+    document.body.appendChild(panel);
+    panel.style.display = 'none';
+
+    function flash(text, cls) {
+        btn.textContent = text;
+        btn.classList.add(cls);
+        setTimeout(() => {
+            btn.textContent = '📋 复制分仓JSON';
+            btn.classList.remove(cls);
+        }, 2000);
+    }
+
+    btn.addEventListener('click', async () => {
+        const vueCtx = getVueCtx();
+        if (!vueCtx) {
+            flash('❌ 未找到分仓组件', 'err');
+            return;
+        }
+        const options = getOptions(vueCtx);
+        if (!options.length) {
+            flash('❌ 无分仓数据，请先计算', 'err');
+            return;
+        }
+        const A = buildA(options);
+        const ok = await copyText(JSON.stringify(A, null, 2));
+        if (ok) {
+            flash(`✅ 已复制 ${A.length} 个方案`, 'ok');
+            console.log('分仓JSON A =', A);
+        } else {
+            flash('❌ 复制失败，请看控制台', 'err');
+            console.log(A);
+        }
+    });
+
+    // 仅在亚马逊发货页面、分仓组件存在时显示
+    setInterval(() => {
+        const show = location.href.includes('SendToAmazon')
+            && !!document.querySelector('.sta-delivery-service-wrapper');
+        panel.style.display = show ? 'block' : 'none';
+    }, 1000);
+})();

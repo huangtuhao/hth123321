@@ -1,0 +1,643 @@
+// ==UserScript==
+// @name         领星ERP-产品列表采集助手
+// @namespace    lingxing-product-exporter
+// @version      1.0.0
+// @description  在领星「产品管理 → 产品列表」页自动识别列表接口，抓取全量产品数据并通过本地数据桥落盘。MCP 不提供产品库资源，这是旁路通道。
+// @author       WorkBuddy
+// @match        *://erp.lingxing.com/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        unsafeWindow
+// @connect      127.0.0.1
+// @run-at       document-start
+// ==/UserScript==
+
+(function () {
+  "use strict";
+
+  const CONFIG = {
+    BRIDGE_BASE: "http://127.0.0.1:32145",
+    CLIENT_ID: "userscript.lingxing.products.v1",
+    DATASET: "products",
+    PROTOCOL_VERSION: 2,
+    TOKEN_KEY: "lx_products_bridge_token_v1",
+    INSTANCE_KEY: "lx_products_instance_id_v1",
+    CAPTURE_KEY: "lx_products_capture_v1",
+    PAGE_SIZE_DEFAULT: 200,
+    MAX_PAGES: 200,
+    REQUEST_TIMEOUT_MS: 120000,
+    CLIENT_WAIT_MS: 15000,
+  };
+
+  // 产品列表记录的字段特征（用于把"产品列表"从其它 list 接口里认出来）
+  const PRODUCT_FIELD_HINTS = [
+    "sku", "product_name", "productName", "spu", "local_name",
+    "product_type", "cg_price", "product_id", "category_name",
+  ];
+  const NEGATIVE_FIELD_HINTS = ["shipment_id", "shipment_status", "keyword", "campaign_id"];
+
+  const state = {
+    capture: null,      // { path, payload, total, pageSize, capturedAt, origin }
+    lastRun: null,      // { recordCount, at, added, removed }
+    busy: false,
+    log: [],
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+
+  function log(message) {
+    const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+    state.log.push(line);
+    if (state.log.length > 60) state.log.shift();
+    const el = document.getElementById("lx-products-log");
+    if (el) el.textContent = state.log.slice(-12).join("\n");
+    console.log("[产品列表采集]", message);
+  }
+
+  // ---------------------------------------------------------------- 接口自发现
+  // 思路：不硬编码 /api/xxx，而是 hook 页面自己的 XHR / fetch，
+  // 从真实响应里认出「带 list + total 的产品记录」，把该次请求的 path 和 payload 当模板。
+  // 这样领星改接口路径也不会失效。
+
+  function looksLikeProductList(json) {
+    const data = json && (json.data || json);
+    if (!data || !Array.isArray(data.list) || data.list.length === 0) return null;
+    const total = Number(data.total);
+    if (!Number.isFinite(total)) return null;
+
+    const first = data.list[0];
+    if (!first || typeof first !== "object") return null;
+    const keys = Object.keys(first);
+    if (NEGATIVE_FIELD_HINTS.some((k) => k in first)) return null;
+    const hits = PRODUCT_FIELD_HINTS.filter((k) => k in first);
+    if (hits.length < 2) return null;
+    return { total, sample: first, keys };
+  }
+
+  function captureFrom(url, body, json) {
+    const matched = looksLikeProductList(json);
+    if (!matched) return;
+
+    let payload = null;
+    if (typeof body === "string" && body.trim().startsWith("{")) {
+      try {
+        payload = JSON.parse(body);
+      } catch (_) {
+        payload = null;
+      }
+    } else if (body && typeof body === "object") {
+      payload = JSON.parse(JSON.stringify(body));
+    }
+    if (!payload || typeof payload !== "object") return;
+    if (!("offset" in payload) || !("length" in payload)) return;
+
+    let pathname;
+    try {
+      pathname = new URL(url, location.origin).pathname;
+    } catch (_) {
+      return;
+    }
+
+    const pageSize = Number(payload.length);
+    const changed =
+      !state.capture ||
+      state.capture.path !== pathname ||
+      state.capture.total !== matched.total;
+
+    state.capture = {
+      path: pathname,
+      payload,
+      total: matched.total,
+      pageSize: Number.isFinite(pageSize) ? pageSize : CONFIG.PAGE_SIZE_DEFAULT,
+      capturedAt: new Date().toISOString(),
+      keys: matched.keys,
+      origin: location.origin,
+    };
+    GM_setValue(CONFIG.CAPTURE_KEY, {
+      path: state.capture.path,
+      total: state.capture.total,
+      pageSize: state.capture.pageSize,
+      keys: state.capture.keys,
+      capturedAt: state.capture.capturedAt,
+    });
+
+    if (changed) {
+      log(`已识别产品列表接口：${pathname}（接口 total=${matched.total}，字段 ${matched.keys.length} 个）`);
+      render();
+    }
+  }
+
+  function installHooks() {
+    // XHR（领星 axios 走这条）
+    try {
+      const proto = pageWindow.XMLHttpRequest.prototype;
+      const originalOpen = proto.open;
+      const originalSend = proto.send;
+
+      proto.open = function (method, url) {
+        try {
+          this.__lx_url = url;
+          this.__lx_method = method;
+        } catch (_) { /* ignore */ }
+        return originalOpen.apply(this, arguments);
+      };
+
+      proto.send = function (body) {
+        try {
+          if (this.__lx_url && !this.__lx_self) {
+            const url = this.__lx_url;
+            this.addEventListener("load", function () {
+              try {
+                if (this.status < 200 || this.status >= 300) return;
+                if (this.responseType && this.responseType !== "text" && this.responseType !== "json") return;
+                const text = this.responseType === "json" ? JSON.stringify(this.response) : this.responseText;
+                if (!text || text.length > 8 * 1024 * 1024) return;
+                if (!text.trim().startsWith("{")) return;
+                captureFrom(url, body, JSON.parse(text));
+              } catch (_) { /* ignore */ }
+            });
+          }
+        } catch (_) { /* ignore */ }
+        return originalSend.apply(this, arguments);
+      };
+      log("已挂载 XHR 监听");
+    } catch (error) {
+      log(`XHR 监听安装失败：${error.message}`);
+    }
+
+    // fetch（少数页面走这条）
+    try {
+      const originalFetch = pageWindow.fetch;
+      if (typeof originalFetch === "function") {
+        pageWindow.fetch = function (input, init) {
+          const url = typeof input === "string" ? input : input && input.url;
+          const body = init && init.body;
+          const promise = originalFetch.apply(this, arguments);
+          try {
+            promise.then((response) => {
+              try {
+                if (!response || !response.ok) return;
+                const type = response.headers.get("content-type") || "";
+                if (!type.includes("json")) return;
+                response.clone().json().then((json) => captureFrom(url, body, json)).catch(() => {});
+              } catch (_) { /* ignore */ }
+            }).catch(() => {});
+          } catch (_) { /* ignore */ }
+          return promise;
+        };
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  // ---------------------------------------------------------------- 页面请求客户端
+  // 复用领星页面自己的 $post（由领星拦截器补 Token/公司信息），不保存任何凭证。
+
+  function normalizeErpResponse(response) {
+    if (response && response.code !== undefined) return response;
+    if (response && response.data && response.data.code !== undefined) return response.data;
+    return response;
+  }
+
+  function findErpPostClient() {
+    const roots = [];
+    ["#app", ".app-wrapper", ".el-main"].forEach((selector) => {
+      const el = document.querySelector(selector);
+      if (el && el.__vue__) roots.push(el.__vue__);
+    });
+    const seen = new Set();
+    const queue = [...roots];
+    while (queue.length > 0 && seen.size < 6000) {
+      const vm = queue.shift();
+      if (!vm || seen.has(vm)) continue;
+      seen.add(vm);
+      try {
+        if (typeof vm.$post === "function") {
+          return {
+            // 只传 path + payload，与页面自身列表请求保持一致；顺序请求不需要 req_time_sequence 分组。
+            post: async (path, payload) => normalizeErpResponse(await vm.$post(path, payload)),
+          };
+        }
+        if (Array.isArray(vm.$children)) queue.push(...vm.$children);
+        if (vm.$parent) queue.push(vm.$parent);
+      } catch (_) { /* ignore */ }
+    }
+    return null;
+  }
+
+  async function waitForErpPostClient() {
+    const deadline = Date.now() + CONFIG.CLIENT_WAIT_MS;
+    while (Date.now() < deadline) {
+      const client = findErpPostClient();
+      if (client) return client;
+      await sleep(800);
+    }
+    return null;
+  }
+
+  // 兜底：找不到 $post 时用同源 fetch（依赖 cookie 登录态）
+  function createFetchClient() {
+    return {
+      post: async (path, payload) => {
+        const response = await fetch(path, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(payload),
+        });
+        const json = await response.json();
+        return normalizeErpResponse(json);
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------- 采集
+
+  function recordKey(record) {
+    if (record.id !== undefined && record.id !== null && record.id !== "") return `id:${record.id}`;
+    if (record.sku) return `sku:${record.sku}`;
+    if (record.product_id) return `product_id:${record.product_id}`;
+    return null;
+  }
+
+  async function fetchPage(client, template, offset, pageSize) {
+    const payload = JSON.parse(JSON.stringify(template));
+    payload.offset = offset;
+    payload.length = pageSize;
+    const response = await client.post(state.capture.path, payload);
+    if (!response || response.code !== 1 || !response.data || !Array.isArray(response.data.list)) {
+      throw new Error((response && response.msg) || `offset=${offset} 返回格式异常`);
+    }
+    return { rows: response.data.list, total: Number(response.data.total) };
+  }
+
+  async function collectAll(client) {
+    const template = state.capture.payload;
+    let pageSize = state.capture.pageSize || CONFIG.PAGE_SIZE_DEFAULT;
+    let offset = 0;
+    let pages = 0;
+    let expectedTotal = null;
+    const rows = [];
+
+    // 第一页：先按设定页长试探，被后端截断就自动降级为实际返回条数
+    while (pages < CONFIG.MAX_PAGES) {
+      const page = await fetchPage(client, template, offset, pageSize);
+      pages += 1;
+
+      if (expectedTotal === null) {
+        expectedTotal = page.total;
+        if (page.rows.length > 0 && page.rows.length < pageSize && page.rows.length < expectedTotal) {
+          log(`每页 ${pageSize} 条被后端截断为 ${page.rows.length} 条，改用 ${page.rows.length} 条重试`);
+          pageSize = page.rows.length;
+          rows.length = 0;
+          offset = 0;
+          continue;
+        }
+      } else if (page.total !== expectedTotal) {
+        throw new Error(`抓取过程中 total 由 ${expectedTotal} 变为 ${page.total}，请稍后重试`);
+      }
+
+      rows.push(...page.rows);
+      log(`第 ${pages} 页：${Math.min(rows.length, expectedTotal)}/${expectedTotal}`);
+
+      if (rows.length >= expectedTotal) break;
+      if (page.rows.length === 0) {
+        throw new Error(`分页提前结束：应有 ${expectedTotal} 条，实际 ${rows.length} 条`);
+      }
+      offset += pageSize;
+    }
+
+    const unique = new Map();
+    for (const row of rows) {
+      const key = recordKey(row);
+      if (!key) throw new Error("接口返回了缺少主键（id/sku/product_id）的产品记录");
+      if (!unique.has(key)) unique.set(key, { ...row, _record_key: key });
+    }
+
+    if (unique.size !== expectedTotal) {
+      throw new Error(`校验失败：接口报告 ${expectedTotal} 条，去重后 ${unique.size} 条`);
+    }
+
+    return {
+      records: [...unique.values()],
+      total: expectedTotal,
+      pages,
+      pageSize,
+    };
+  }
+
+  // ---------------------------------------------------------------- 本地桥
+
+  function bridgeError(message) {
+    const error = new Error(message);
+    return error;
+  }
+
+  function bridgeRequest(method, path, { body, headers = {}, timeout = CONFIG.REQUEST_TIMEOUT_MS } = {}) {
+    const url = `${CONFIG.BRIDGE_BASE}${path}`;
+    return new Promise((resolve, reject) => {
+      const options = {
+        method,
+        url,
+        timeout,
+        headers: { Accept: "application/json", ...headers },
+        onload: (response) => {
+          let payload = null;
+          try {
+            payload = response.responseText ? JSON.parse(response.responseText) : {};
+          } catch (_) {
+            reject(bridgeError(`本地桥返回无效 JSON（HTTP ${response.status}）`));
+            return;
+          }
+          if (response.status < 200 || response.status >= 300) {
+            const code = payload && payload.error ? payload.error.code : "BRIDGE_HTTP_ERROR";
+            const msg = (payload && payload.error && payload.error.message) || `HTTP ${response.status}`;
+            const hint = {
+              UNAUTHORIZED: "令牌失效，请点「重新配对」",
+              PAIRING_DENIED: "客户端未注册或配对码已过期，请重新生成配对码",
+              PERMISSION_DENIED: "该客户端无权写入 products 数据集",
+              RECORD_COUNT_MISMATCH: "接口条数与抓取条数不一致（疑似漏页），已拒绝落盘",
+              ACCOUNT_MISMATCH: "本地目录已绑定另一个账号",
+            }[code] || "";
+            reject(bridgeError(`${code}：${msg}${hint ? `（${hint}）` : ""}`));
+            return;
+          }
+          resolve(payload);
+        },
+        onerror: () => reject(bridgeError(`无法连接本地桥 ${CONFIG.BRIDGE_BASE}，请确认后台计划任务在运行`)),
+        ontimeout: () => reject(bridgeError("本地桥请求超时")),
+      };
+      if (body !== undefined) {
+        options.data = typeof body === "string" ? body : JSON.stringify(body);
+        options.headers["Content-Type"] = "application/json;charset=UTF-8";
+      }
+      GM_xmlhttpRequest(options);
+    });
+  }
+
+  function getInstanceId() {
+    let id = GM_getValue(CONFIG.INSTANCE_KEY, "");
+    if (!id) {
+      id = `lx-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+      GM_setValue(CONFIG.INSTANCE_KEY, id);
+    }
+    return id;
+  }
+
+  async function ensureToken(forceRePair) {
+    if (!forceRePair) {
+      const saved = String(GM_getValue(CONFIG.TOKEN_KEY, "") || "").trim();
+      if (saved) return saved;
+    }
+    const code = prompt("请输入本地桥一次性配对码（在项目目录运行：\nnode bridge-cli.cjs client pair-code " + CONFIG.CLIENT_ID + "）");
+    if (!code) throw bridgeError("已取消配对");
+    const result = await bridgeRequest("POST", "/v2/pair", {
+      body: {
+        client_id: CONFIG.CLIENT_ID,
+        pairing_code: String(code).trim(),
+        instance_id: getInstanceId(),
+      },
+      timeout: 15000,
+    });
+    if (!result || result.ok !== true || typeof result.token !== "string" || !result.token) {
+      throw bridgeError("配对响应不完整，未取得令牌");
+    }
+    GM_setValue(CONFIG.TOKEN_KEY, result.token);
+    log(`配对成功，权限：${(result.permissions || []).join(", ") || "无"}`);
+    return result.token;
+  }
+
+  async function postToBridge(payload) {
+    let token = await ensureToken(false);
+    const send = (t) => bridgeRequest("POST", `/v2/datasets/${CONFIG.DATASET}/ingest`, {
+      body: payload,
+      headers: {
+        "X-Local-Bridge-Client": CONFIG.CLIENT_ID,
+        Authorization: `Bearer ${t}`,
+      },
+    });
+    try {
+      return await send(token);
+    } catch (error) {
+      // 令牌失效：重新配对后仅重试一次
+      if (/UNAUTHORIZED/.test(error.message)) {
+        log("令牌失效，自动重新配对");
+        token = await ensureToken(true);
+        return await send(token);
+      }
+      throw error;
+    }
+  }
+
+  // ---------------------------------------------------------------- 主流程
+
+  async function runCollection() {
+    if (state.busy) return;
+    state.busy = true;
+    render();
+    try {
+      if (!state.capture) {
+        throw new Error("还没识别到产品列表接口。请打开「产品管理 → 产品列表」页面并刷新一次，等页面自己加载出列表。");
+      }
+      log(`使用接口 ${state.capture.path}，接口 total=${state.capture.total}`);
+
+      let client = await waitForErpPostClient();
+      if (client) {
+        log("已获取页面 $post 请求实例");
+      } else {
+        log("未找到 $post，改用同源 fetch 兜底");
+        client = createFetchClient();
+      }
+
+      const result = await collectAll(client);
+      log(`抓取完成：${result.records.length} 条 / ${result.pages} 页`);
+
+      const now = new Date();
+      const collectedAt = now.toISOString();
+      const runId = `${now.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${Math.random()
+        .toString(36).slice(2, 8)}`;
+      const accountKey = `lingxing:products`;
+
+      const payload = {
+        schema_version: 1,
+        dataset: CONFIG.DATASET,
+        account_key: accountKey,
+        run_id: runId,
+        collected_at: collectedAt,
+        snapshot: {
+          records: result.records,
+          record_count: result.records.length,
+          api_total: result.total,
+          source: {
+            api: state.capture.path,
+            page_size: result.pageSize,
+            pages: result.pages,
+            captured_at: state.capture.capturedAt,
+            captured_total: state.capture.total,
+            collected_from: location.href,
+          },
+        },
+        export: {
+          run_id: runId,
+          account_key: accountKey,
+          completed_at: collectedAt,
+          summary: {
+            record_count: result.records.length,
+            pages: result.pages,
+            page_size: result.pageSize,
+          },
+        },
+      };
+
+      const bodyText = JSON.stringify(payload);
+      log(`正在写入本地桥（${(bodyText.length / 1024 / 1024).toFixed(1)} MB）`);
+      const ack = await postToBridge(bodyText);
+      if (!ack || ack.ok !== true || ack.committed !== true || ack.dataset_id !== CONFIG.DATASET) {
+        throw new Error("本地桥 ACK 异常，数据可能未落盘");
+      }
+      if (Number(ack.record_count) !== result.records.length) {
+        throw new Error(`本地桥记录数 ${ack.record_count} 与实际 ${result.records.length} 不一致`);
+      }
+
+      state.lastRun = {
+        at: collectedAt,
+        recordCount: result.records.length,
+        added: ack.added_count,
+        removed: ack.removed_count,
+        path: ack.files ? ack.files.latest : "",
+        records: result.records,
+      };
+      log(`落盘成功：${ack.record_count} 条（新增 ${ack.added_count ?? "?"} / 移除 ${ack.removed_count ?? "?"}）`);
+      log(`本地路径：C:\\数据\\领星\\产品数据\\latest.json`);
+      render();
+      alert(`产品列表已落盘：${ack.record_count} 条\n新增 ${ack.added_count ?? "?"} / 移除 ${ack.removed_count ?? "?"}\n\n文件：C:\\数据\\领星\\产品数据\\latest.json`);
+    } catch (error) {
+      log(`失败：${error.message}`);
+      alert(`采集失败：${error.message}`);
+    } finally {
+      state.busy = false;
+      render();
+    }
+  }
+
+  // ---------------------------------------------------------------- CSV 导出（本地备份）
+
+  function buildCsv(records, columns) {
+    const esc = (v) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const head = columns.join(",");
+    const lines = records.map((r) => columns.map((c) => esc(r[c])).join(","));
+    return "\uFEFF" + [head, ...lines].join("\n");
+  }
+
+  async function exportCsv() {
+    try {
+      if (!state.lastRun || !state.lastRun.records || state.lastRun.records.length === 0) {
+        throw new Error("本次会话还没有采集结果，请先点「开始采集并落盘」");
+      }
+      const records = state.lastRun.records;
+      const columns = Object.keys(records[0] || {}).filter((k) => k !== "_record_key");
+      const csv = buildCsv(records, columns);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `领星产品列表_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+    } catch (error) {
+      alert(`导出失败：${error.message}`);
+    }
+  }
+
+  // ---------------------------------------------------------------- UI
+
+  const panelId = "lx-products-panel";
+
+  function render() {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    const cap = state.capture;
+    const run = state.lastRun;
+    panel.querySelector("#lx-products-status").innerHTML = `
+      <div><b>接口</b>：${cap ? `${cap.path}（total=${cap.total}）` : "<span style='color:#d93025'>未识别，请打开产品列表页并刷新</span>"}</div>
+      <div><b>上次落盘</b>：${run ? `${new Date(run.at).toLocaleString()} · ${run.recordCount} 条（+${run.added ?? "?"} / -${run.removed ?? "?"}）` : "—"}</div>
+    `;
+    const btn = panel.querySelector("#lx-products-run");
+    btn.disabled = state.busy || !cap;
+    btn.textContent = state.busy ? "采集中…" : "开始采集并落盘";
+    const rePair = panel.querySelector("#lx-products-repair");
+    rePair.disabled = state.busy;
+  }
+
+  function mountPanel() {
+    if (document.getElementById(panelId)) return;
+    const panel = document.createElement("div");
+    panel.id = panelId;
+    panel.innerHTML = `
+      <style>
+        #${panelId}{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:360px;
+          background:#fff;color:#1f2328;border:1px solid #e5e7eb;border-radius:12px;
+          box-shadow:0 8px 28px rgba(0,0,0,.14);
+          font:13px/1.55 -apple-system,"Microsoft YaHei",sans-serif}
+        #${panelId} .hd{display:flex;justify-content:space-between;align-items:center;
+          padding:10px 14px;border-bottom:1px solid #eef0f3;font-weight:600}
+        #${panelId} .hd span{font-weight:400;color:#6b7280;font-size:12px}
+        #${panelId} .bd{padding:12px 14px}
+        #${panelId} .st{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;
+          padding:8px 10px;font-size:12px;margin-bottom:10px}
+        #${panelId} .st div{margin:2px 0;word-break:break-all}
+        #${panelId} button{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid #d0d7de;
+          background:#fff;cursor:pointer;margin:0 6px 6px 0}
+        #${panelId} button:hover:not(:disabled){border-color:#2563eb;color:#2563eb}
+        #${panelId} button:disabled{opacity:.5;cursor:not-allowed}
+        #${panelId} button.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+        #${panelId} button.primary:hover:not(:disabled){background:#1d4ed8;color:#fff}
+        #${panelId} pre{margin:8px 0 0;padding:8px;background:#0f172a;color:#d6e2f5;border-radius:8px;
+          font-size:11px;line-height:1.5;max-height:130px;overflow:auto;white-space:pre-wrap}
+        #${panelId} .tip{color:#6b7280;font-size:11px;margin-top:6px}
+        #${panelId}.min .bd,#${panelId}.min .tip{display:none}
+      </style>
+      <div class="hd">领星产品列表采集 <span>本地桥旁路</span></div>
+      <div class="bd">
+        <div class="st" id="lx-products-status"></div>
+        <button class="primary" id="lx-products-run">开始采集并落盘</button>
+        <button id="lx-products-csv">导出上次 CSV</button>
+        <button id="lx-products-repair">重新配对</button>
+        <pre id="lx-products-log"></pre>
+        <div class="tip">采集的是<b>当前筛选条件</b>下的全量；数据落到 C:\\数据\\领星\\产品数据\\latest.json</div>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    panel.querySelector(".hd").addEventListener("click", () => panel.classList.toggle("min"));
+    panel.querySelector("#lx-products-run").addEventListener("click", runCollection);
+    panel.querySelector("#lx-products-csv").addEventListener("click", exportCsv);
+    panel.querySelector("#lx-products-repair").addEventListener("click", async () => {
+      try {
+        await ensureToken(true);
+        alert("已重新配对");
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+    render();
+  }
+
+  // ---------------------------------------------------------------- 启动
+
+  installHooks();
+
+  const saved = GM_getValue(CONFIG.CAPTURE_KEY, null);
+  if (saved && saved.path) {
+    log(`上次识别过 ${saved.path}（total=${saved.total}），等待本次页面请求刷新`);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mountPanel);
+  } else {
+    mountPanel();
+  }
+})();
