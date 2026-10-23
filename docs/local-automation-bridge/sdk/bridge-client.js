@@ -123,6 +123,80 @@
     return value;
   }
 
+  function assertClaimToken(value) {
+    if (typeof value !== 'string' || value.length < 24 || value.length > 4096) {
+      throw new LocalBridgeError('claimToken 格式无效', { code: 'INVALID_CLAIM_TOKEN' });
+    }
+    return value;
+  }
+
+  function assertWorkerId(value) {
+    if (typeof value !== 'string' || !/^[a-z0-9][a-z0-9._:@-]{7,159}$/i.test(value)) {
+      throw new LocalBridgeError('workerId 必须是 8 到 160 位安全字符串', {
+        code: 'INVALID_WORKER_ID',
+      });
+    }
+    return value;
+  }
+
+  function assertRuntimeState(value) {
+    if (!['idle', 'running', 'error'].includes(value)) {
+      throw new LocalBridgeError('runtime state 必须是 idle、running 或 error', {
+        code: 'INVALID_RUNTIME_HEARTBEAT',
+      });
+    }
+    return value;
+  }
+
+  function normalizeRuntimeHeartbeat(value) {
+    if (!isPlainObject(value)) {
+      throw new LocalBridgeError('runtime heartbeat 必须是对象', {
+        code: 'INVALID_RUNTIME_HEARTBEAT',
+      });
+    }
+    const allowedFields = new Set(['instance_id', 'state', 'version', 'message']);
+    const unknownField = Object.keys(value).find((key) => !allowedFields.has(key));
+    if (unknownField) {
+      throw new LocalBridgeError(`runtime heartbeat 包含不支持的字段：${unknownField}`, {
+        code: 'INVALID_RUNTIME_HEARTBEAT',
+      });
+    }
+    const body = {
+      instance_id: assertWorkerId(value.instance_id),
+      state: assertRuntimeState(value.state ?? 'idle'),
+    };
+    if (value.version !== undefined && value.version !== null && value.version !== '') {
+      if (typeof value.version !== 'string' || !/^[a-z0-9][a-z0-9._+-]{0,63}$/i.test(value.version)) {
+        throw new LocalBridgeError('runtime version 必须是 1 到 64 位安全版本字符串', {
+          code: 'INVALID_RUNTIME_HEARTBEAT',
+        });
+      }
+      body.version = value.version;
+    }
+    if (value.message !== undefined && value.message !== null && value.message !== '') {
+      if (
+        typeof value.message !== 'string'
+        || value.message.length > 500
+        || /[\x00-\x1f\x7f]/.test(value.message)
+      ) {
+        throw new LocalBridgeError('runtime message 必须是不超过 500 字符的字符串', {
+          code: 'INVALID_RUNTIME_HEARTBEAT',
+        });
+      }
+      body.message = value.message;
+    }
+    return body;
+  }
+
+  function assertJobObject(value, label) {
+    if (!isPlainObject(value) || typeof value.job_id !== 'string' || typeof value.state !== 'string') {
+      throw new LocalBridgeError(`${label} 缺少有效 job 对象`, {
+        code: 'INVALID_JOB_RESPONSE',
+      });
+    }
+    return value;
+  }
+
   function parseResponseHeaders(rawHeaders) {
     const headers = Object.create(null);
     if (typeof rawHeaders !== 'string') return headers;
@@ -367,6 +441,75 @@
       return result.payload;
     }
 
+    async function health() {
+      const result = await request({
+        method: 'GET',
+        path: '/health',
+        authenticated: false,
+        expectedStatuses: [200],
+        label: '健康检查接口',
+      });
+      if (result.payload.ok !== true || result.payload.service_id !== 'local-automation-bridge') {
+        throw new LocalBridgeError('健康检查返回了不兼容的响应', {
+          code: 'INVALID_HEALTH_RESPONSE',
+          status: result.status,
+        });
+      }
+      return result.payload;
+    }
+
+    async function runtimeHeartbeat(body) {
+      const normalized = normalizeRuntimeHeartbeat(body);
+      const result = await request({
+        method: 'POST',
+        path: '/v2/runtime/heartbeat',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        data: jsonStringify(normalized, 'runtime heartbeat 请求'),
+        expectedStatuses: [200],
+        label: '运行状态心跳接口',
+      });
+      assertSuccessEnvelope(result.payload, '运行状态心跳接口');
+      if (!isPlainObject(result.payload.runtime)) {
+        throw new LocalBridgeError('运行状态心跳响应缺少 runtime 对象', {
+          code: 'INVALID_RUNTIME_RESPONSE',
+          status: result.status,
+        });
+      }
+      return result.payload.runtime;
+    }
+
+    async function heartbeat(instanceId, options = {}) {
+      if (!isPlainObject(options)) {
+        throw new LocalBridgeError('heartbeat options 必须是对象', {
+          code: 'INVALID_RUNTIME_HEARTBEAT',
+        });
+      }
+      return runtimeHeartbeat({ ...options, instance_id: instanceId });
+    }
+
+    async function runtimeStatus() {
+      const result = await request({
+        method: 'GET',
+        path: '/v2/runtime/status',
+        expectedStatuses: [200],
+        label: '运行状态接口',
+      });
+      assertSuccessEnvelope(result.payload, '运行状态接口');
+      const runtime = result.payload.runtime;
+      if (
+        !isPlainObject(runtime)
+        || !isPlainObject(runtime.summary)
+        || !Array.isArray(runtime.logical_clients)
+        || !Array.isArray(runtime.instances)
+      ) {
+        throw new LocalBridgeError('运行状态响应结构无效', {
+          code: 'INVALID_RUNTIME_RESPONSE',
+          status: result.status,
+        });
+      }
+      return result.payload;
+    }
+
     async function getConfig(id, etag) {
       const resourceId = assertResourceId(id, 'config id');
       const previousEtag = assertEtag(etag);
@@ -450,12 +593,160 @@
       return result.payload;
     }
 
+    async function jobCapabilities() {
+      const result = await request({
+        method: 'GET',
+        path: '/v2/job-capabilities',
+        expectedStatuses: [200],
+        label: '任务能力清单接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务能力清单接口');
+      if (!Array.isArray(result.payload.job_capabilities)) {
+        throw new LocalBridgeError('任务能力清单结构无效', {
+          code: 'INVALID_JOB_CAPABILITIES_RESPONSE',
+          status: result.status,
+        });
+      }
+      return result.payload.job_capabilities;
+    }
+
+    async function createJob(capability, input = {}, options = {}) {
+      const capabilityId = assertResourceId(capability, 'capability');
+      if (!isPlainObject(input) || !isPlainObject(options)) {
+        throw new LocalBridgeError('任务 input 和 options 必须是普通对象', {
+          code: 'INVALID_JOB_REQUEST',
+        });
+      }
+      const body = { capability: capabilityId, input };
+      if (options.idempotencyKey !== undefined) body.idempotency_key = String(options.idempotencyKey);
+      if (options.ttlSeconds !== undefined) body.ttl_seconds = Number(options.ttlSeconds);
+      if (options.confirmed === true) body.confirmed = true;
+      const result = await request({
+        method: 'POST',
+        path: '/v2/jobs',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        data: jsonStringify(body, '任务创建请求'),
+        expectedStatuses: [200, 201],
+        label: '任务创建接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务创建接口');
+      return {
+        duplicate: result.payload.duplicate === true,
+        job: assertJobObject(result.payload.job, '任务创建接口'),
+      };
+    }
+
+    async function claimJobs(capabilityIds, workerId, waitMs = 25000) {
+      if (
+        !Array.isArray(capabilityIds)
+        || capabilityIds.length === 0
+        || capabilityIds.some((value) => typeof value !== 'string')
+      ) {
+        throw new LocalBridgeError('capabilityIds 必须是非空字符串数组', {
+          code: 'INVALID_JOB_CLAIM',
+        });
+      }
+      const capabilitiesForClaim = [...new Set(
+        capabilityIds.map((value) => assertResourceId(value, 'capability')),
+      )];
+      const normalizedWaitMs = Number(waitMs);
+      if (!Number.isSafeInteger(normalizedWaitMs) || normalizedWaitMs < 0 || normalizedWaitMs > 25000) {
+        throw new LocalBridgeError('waitMs 必须是 0 到 25000 之间的整数', {
+          code: 'INVALID_JOB_CLAIM',
+        });
+      }
+      const result = await request({
+        method: 'POST',
+        path: '/v2/jobs/claim',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        data: jsonStringify({
+          capabilities: capabilitiesForClaim,
+          worker_id: assertWorkerId(workerId),
+          wait_ms: normalizedWaitMs,
+        }, '任务领取请求'),
+        expectedStatuses: [200],
+        label: '任务领取接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务领取接口');
+      if (result.payload.job === null && result.payload.claim_token === null) return null;
+      const job = assertJobObject(result.payload.job, '任务领取接口');
+      return { job, claimToken: assertClaimToken(result.payload.claim_token) };
+    }
+
+    async function getJob(jobId) {
+      const normalizedJobId = assertResourceId(jobId, 'jobId');
+      const result = await request({
+        method: 'GET',
+        path: `/v2/jobs/${encodeURIComponent(normalizedJobId)}`,
+        expectedStatuses: [200],
+        label: '任务状态接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务状态接口');
+      return assertJobObject(result.payload.job, '任务状态接口');
+    }
+
+    async function reportJobProgress(jobId, claimToken, progress) {
+      const normalizedJobId = assertResourceId(jobId, 'jobId');
+      const result = await request({
+        method: 'POST',
+        path: `/v2/jobs/${encodeURIComponent(normalizedJobId)}/progress`,
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        data: jsonStringify({
+          claim_token: assertClaimToken(claimToken),
+          progress: progress ?? null,
+        }, '任务进度请求'),
+        expectedStatuses: [200],
+        label: '任务进度接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务进度接口');
+      return assertJobObject(result.payload.job, '任务进度接口');
+    }
+
+    async function completeJob(jobId, claimToken, state, details = {}) {
+      const normalizedJobId = assertResourceId(jobId, 'jobId');
+      if (!['succeeded', 'failed'].includes(state) || !isPlainObject(details)) {
+        throw new LocalBridgeError('任务完成状态或 details 无效', {
+          code: 'INVALID_JOB_COMPLETION',
+        });
+      }
+      const body = {
+        claim_token: assertClaimToken(claimToken),
+        state,
+      };
+      if (state === 'succeeded') body.result = details.result ?? null;
+      else body.error = details.error ?? { code: 'EXECUTION_FAILED', message: '浏览器任务执行失败' };
+      if (details.progress !== undefined) body.progress = details.progress;
+      const result = await request({
+        method: 'POST',
+        path: `/v2/jobs/${encodeURIComponent(normalizedJobId)}/complete`,
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        data: jsonStringify(body, '任务完成请求'),
+        expectedStatuses: [200],
+        label: '任务完成接口',
+      });
+      assertSuccessEnvelope(result.payload, '任务完成接口');
+      return {
+        duplicate: result.payload.duplicate === true,
+        job: assertJobObject(result.payload.job, '任务完成接口'),
+      };
+    }
+
     return Object.freeze({
       pair,
+      health,
       capabilities,
+      runtimeHeartbeat,
+      heartbeat,
+      runtimeStatus,
       getConfig,
       ingestDataset,
       uploadArtifact,
+      jobCapabilities,
+      createJob,
+      claimJobs,
+      getJob,
+      reportJobProgress,
+      completeJob,
     });
   }
 

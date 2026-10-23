@@ -9,7 +9,9 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createBridge } = require('./bridge.cjs');
+const { JobStore } = require('./lib/job-store.cjs');
 const { normalizeRegistry } = require('./lib/registry.cjs');
+const { RuntimeStore } = require('./lib/runtime-store.cjs');
 
 const TEST_TOKEN = 'test-only-token-with-at-least-24-characters';
 const execFileAsync = promisify(execFile);
@@ -52,13 +54,29 @@ function registryRaw(rootDir, sharedRoot, stateRoot) {
         allowed_extensions: ['.pdf', '.json'],
       },
     },
+    job_capabilities: {
+      'lingxing.fba_shipments.refresh': {
+        name: '刷新领星 FBA 货件数据',
+        description: '测试能力',
+        mode: 'read_only',
+        default_ttl_seconds: 60,
+        max_ttl_seconds: 300,
+        lease_seconds: 2,
+        max_input_bytes: 65536,
+        max_progress_bytes: 65536,
+        max_result_bytes: 65536,
+      },
+    },
     clients: {
       'userscript.lingxing.fba.v1': {
         name: 'legacy',
         aliases: ['lingxing-tampermonkey-v1'],
         pairing: 'legacy_auto',
         allowed_origins: ['https://erp.lingxing.com'],
-        permissions: ['dataset:write:fba_shipments'],
+        permissions: [
+          'dataset:write:fba_shipments',
+          'job:execute:lingxing.fba_shipments.refresh',
+        ],
       },
       'userscript.lingxing.automation.v2': {
         name: 'generic',
@@ -70,6 +88,9 @@ function registryRaw(rootDir, sharedRoot, stateRoot) {
           'config:read:freight_channels',
           'config:write:freight_channels',
           'artifact:write:lingxing_fba',
+          'job:create:lingxing.fba_shipments.refresh',
+          'job:read:lingxing.fba_shipments.refresh',
+          'runtime:read',
         ],
       },
     },
@@ -175,6 +196,31 @@ function v2Headers(pair, extra = {}) {
   };
 }
 
+test('catalog 发布旁路说明、技术说明和兼容入口', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+
+  const catalog = JSON.parse(await fs.readFile(path.join(context.sharedRoot, 'catalog.json'), 'utf8'));
+  assert.equal(catalog.start_here, '_说明/AI网页能力旁路-使用说明.md');
+  assert.equal(catalog.documentation, '_说明/本地自动化桥-AI接入说明.md');
+  assert.deepEqual(catalog.guides, {
+    ai_web_fallback: '_说明/AI网页能力旁路-使用说明.md',
+    bridge_technical: '_说明/本地自动化桥-技术接入说明.md',
+  });
+  assert.match(catalog.fallback_trigger, /MCP/);
+  assert.equal(catalog.runtime_presence.heartbeat_path, '/v2/runtime/heartbeat');
+  assert.equal(catalog.runtime_presence.status_path, '/v2/runtime/status');
+  assert.equal(catalog.runtime_presence.ttl_seconds, 90);
+
+  const usage = await fs.readFile(path.join(context.sharedRoot, '_说明', 'AI网页能力旁路-使用说明.md'), 'utf8');
+  const technical = await fs.readFile(path.join(context.sharedRoot, '_说明', '本地自动化桥-技术接入说明.md'), 'utf8');
+  const compatibility = await fs.readFile(path.join(context.sharedRoot, '_说明', '本地自动化桥-AI接入说明.md'), 'utf8');
+  assert.match(usage, /生成插件不是原任务的终点|打通采集不是最终目标/);
+  assert.match(technical, /v2 接口速查/);
+  assert.match(compatibility, /AI网页能力旁路-使用说明\.md/);
+  assert.match(compatibility, /本地自动化桥-技术接入说明\.md/);
+});
+
 test('旧 FBA 插件的 health、配对、ACK 与落盘结构保持兼容', async (t) => {
   const context = await startTestBridge();
   t.after(() => context.cleanup());
@@ -217,7 +263,7 @@ test('旧 FBA 插件的 health、配对、ACK 与落盘结构保持兼容', asyn
   assert.equal(latest.records[0].shipment_id, 'FBA-1001');
   const manifest = JSON.parse(await fs.readFile(path.join(context.legacyRoot, 'manifest.json'), 'utf8'));
   assert.equal(manifest.datasets.fba_shipments.run_id, 'baseline-1');
-  assert.equal(manifest.bridge_version, '1.0.0');
+  assert.equal(manifest.bridge_version, '1.2.0');
 
   const duplicate = await fetch(`${context.baseUrl}/v1/ingest`, {
     method: 'POST',
@@ -568,6 +614,523 @@ test('capabilities 按资源类型和动作过滤同名资源', async (t) => {
   assert.equal(body.resources.configs.some((item) => item.id === 'fba_shipments'), false);
 });
 
+test('runtime 心跳按认证客户端聚合，并以受限接口和匿名摘要公开状态', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+  const observer = await v2Pair(context);
+
+  const initialHealth = await (await fetch(`${context.baseUrl}/health`)).json();
+  assert.deepEqual(initialHealth.runtime_summary, {
+    ttl_seconds: 90,
+    registered_clients: 1,
+    online_clients: 0,
+    online_instances: 0,
+    running: 0,
+    error: 0,
+  });
+
+  const invalid = await fetch(`${context.baseUrl}/v2/runtime/heartbeat`, {
+    method: 'POST',
+    headers: v2Headers(observer, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      instance_id: 'generic-tab:0001',
+      state: 'running',
+      current_job_id: 'job-not-owned',
+    }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error.code, 'INVALID_RUNTIME_HEARTBEAT');
+
+  for (const heartbeat of [
+    { instance_id: 'generic-tab:0001', state: 'error', version: '2.4.1', message: '测试异常' },
+    { instance_id: 'generic-tab:0002', state: 'running', version: '2.4.1' },
+  ]) {
+    const response = await fetch(`${context.baseUrl}/v2/runtime/heartbeat`, {
+      method: 'POST',
+      headers: v2Headers(observer, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(heartbeat),
+    });
+    assert.equal(response.status, 200);
+  }
+
+  const anonymous = await fetch(`${context.baseUrl}/v2/runtime/status`);
+  assert.equal(anonymous.status, 401);
+  const legacyToken = await legacyPair(context);
+  const forbidden = await fetch(`${context.baseUrl}/v2/runtime/status`, {
+    headers: {
+      'X-Local-Bridge-Client': 'lingxing-tampermonkey-v1',
+      Authorization: `Bearer ${legacyToken}`,
+    },
+  });
+  assert.equal(forbidden.status, 403);
+  assert.equal((await forbidden.json()).error.code, 'PERMISSION_DENIED');
+
+  const response = await fetch(`${context.baseUrl}/v2/runtime/status`, {
+    headers: v2Headers(observer),
+  });
+  assert.equal(response.status, 200);
+  const status = (await response.json()).runtime;
+  assert.equal(status.summary.online_clients, 1);
+  assert.equal(status.summary.online_instances, 2);
+  assert.equal(status.summary.running, 1, 'client 聚合时 running 优先于 error');
+  assert.equal(status.summary.error, 0);
+  const generic = status.logical_clients.find((item) => item.client_id === observer.client.id);
+  assert.equal(generic.state, 'running');
+  assert.equal(generic.version, '2.4.1');
+  assert.equal(generic.instances.length, 2);
+  assert.ok(generic.instances.every((item) => item.client_name === observer.client.name));
+  assert.ok(generic.instances.every((item) => Array.isArray(item.capabilities)));
+
+  const finalHealth = await (await fetch(`${context.baseUrl}/health`)).json();
+  assert.equal(finalHealth.runtime_summary.online_clients, 1);
+  assert.equal(finalHealth.runtime_summary.online_instances, 2);
+  assert.equal('logical_clients' in finalHealth.runtime_summary, false);
+});
+
+test('runtime presence 超过 TTL 后自动离线', () => {
+  const root = path.join(os.tmpdir(), 'runtime-registry-test');
+  const registry = normalizeRegistry(registryRaw(
+    path.join(root, 'legacy'),
+    path.join(root, 'shared'),
+    path.join(root, 'state'),
+  ));
+  let now = Date.parse('2026-10-23T00:00:00.000Z');
+  const runtime = new RuntimeStore(registry, { ttlSeconds: 1, now: () => now });
+  runtime.heartbeat(registry.clients['userscript.lingxing.fba.v1'], {
+    instance_id: 'fba-tab:00000001',
+    state: 'idle',
+    version: '1.2.3',
+  });
+  assert.equal(runtime.summary().online_clients, 1);
+  now += 1001;
+  assert.equal(runtime.summary().online_clients, 0);
+  assert.equal(runtime.summary().online_instances, 0);
+
+  runtime.touchJob(registry.clients['userscript.lingxing.fba.v1'], 'fba-tab:00000001', {
+    job_id: 'job-runtime-test',
+    state: 'failed',
+    error: { message: '采集失败' },
+  });
+  const failedAt = runtime.snapshot().instances[0].last_seen_at;
+  now += 500;
+  assert.equal(
+    runtime.touchJob(
+      registry.clients['userscript.lingxing.fba.v1'],
+      'fba-tab:00000001',
+    ).last_seen_at,
+    failedAt,
+    '空领取轮询不能立即覆盖并续期刚发生的错误',
+  );
+  now += 501;
+  assert.equal(
+    runtime.touchJob(
+      registry.clients['userscript.lingxing.fba.v1'],
+      'fba-tab:00000001',
+    ).state,
+    'idle',
+  );
+});
+
+test('双向任务通过注册能力完成创建、幂等、领取、进度、完成和查询', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+  const creator = await v2Pair(context);
+  const capability = 'lingxing.fba_shipments.refresh';
+
+  const listedResponse = await fetch(`${context.baseUrl}/v2/job-capabilities`, {
+    headers: v2Headers(creator),
+  });
+  assert.equal(listedResponse.status, 200);
+  const listed = await listedResponse.json();
+  assert.deepEqual(listed.job_capabilities.map((item) => item.id), [capability]);
+  assert.deepEqual(listed.job_capabilities[0].actions, ['create', 'read']);
+
+  const requestBody = {
+    capability,
+    input: { range: 'last_90_days' },
+    idempotency_key: 'refresh-20261021',
+    ttl_seconds: 30,
+  };
+  const create = () => fetch(`${context.baseUrl}/v2/jobs`, {
+    method: 'POST',
+    headers: v2Headers(creator, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(requestBody),
+  });
+  const createdResponse = await create();
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.equal(created.job.state, 'pending');
+  assert.equal(created.job.capability, capability);
+  assert.equal(created.job.input.range, 'last_90_days');
+  assert.equal('claim_token_sha256' in created.job, false);
+
+  const duplicateResponse = await create();
+  assert.equal(duplicateResponse.status, 200);
+  const duplicate = await duplicateResponse.json();
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.job.job_id, created.job.job_id);
+
+  const conflictingResponse = await fetch(`${context.baseUrl}/v2/jobs`, {
+    method: 'POST',
+    headers: v2Headers(creator, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ ...requestBody, input: { range: 'today' } }),
+  });
+  assert.equal(conflictingResponse.status, 409);
+  assert.equal((await conflictingResponse.json()).error.code, 'IDEMPOTENCY_CONFLICT');
+
+  const legacyToken = await legacyPair(context);
+  const workerHeaders = {
+    'X-Local-Bridge-Client': 'lingxing-tampermonkey-v1',
+    Authorization: `Bearer ${legacyToken}`,
+    'Content-Type': 'application/json',
+  };
+  const unclaimedStatus = await fetch(`${context.baseUrl}/v2/jobs/${created.job.job_id}`, {
+    headers: workerHeaders,
+  });
+  assert.equal(unclaimedStatus.status, 403, 'execute 权限不能读取尚未由自己领取的任务');
+  const claimResponse = await fetch(`${context.baseUrl}/v2/jobs/claim`, {
+    method: 'POST',
+    headers: workerHeaders,
+    body: JSON.stringify({ capabilities: [capability], wait_ms: 0 }),
+  });
+  assert.equal(claimResponse.status, 200);
+  const claim = await claimResponse.json();
+  assert.equal(claim.job.job_id, created.job.job_id);
+  assert.equal(claim.job.state, 'running');
+  assert.ok(claim.claim_token.length >= 32);
+
+  const runningRuntime = (await (await fetch(`${context.baseUrl}/v2/runtime/status`, {
+    headers: v2Headers(creator),
+  })).json()).runtime;
+  const runningFba = runningRuntime.logical_clients.find(
+    (item) => item.client_id === 'userscript.lingxing.fba.v1',
+  );
+  assert.equal(runningFba.state, 'running');
+  assert.equal(runningFba.instances[0].current_job_id, created.job.job_id);
+
+  const workerHeartbeat = await fetch(`${context.baseUrl}/v2/runtime/heartbeat`, {
+    method: 'POST',
+    headers: workerHeaders,
+    body: JSON.stringify({
+      instance_id: 'userscript.lingxing.fba.v1',
+      state: 'running',
+      version: '1.2.2',
+    }),
+  });
+  assert.equal(workerHeartbeat.status, 200);
+  assert.equal(
+    (await workerHeartbeat.json()).runtime.current_job_id,
+    created.job.job_id,
+    '普通心跳不能伪造或清除由任务领取派生的 current_job_id',
+  );
+
+  const claimedStatus = await fetch(`${context.baseUrl}/v2/jobs/${created.job.job_id}`, {
+    headers: workerHeaders,
+  });
+  assert.equal(claimedStatus.status, 200, 'worker 可以读取自己已经领取的任务');
+
+  const progressResponse = await fetch(`${context.baseUrl}/v2/jobs/${created.job.job_id}/progress`, {
+    method: 'POST',
+    headers: workerHeaders,
+    body: JSON.stringify({
+      claim_token: claim.claim_token,
+      progress: { phase: 'fetching', current: 2, total: 5 },
+    }),
+  });
+  assert.equal(progressResponse.status, 200);
+  assert.equal((await progressResponse.json()).job.progress.phase, 'fetching');
+
+  const completeBody = {
+    claim_token: claim.claim_token,
+    state: 'succeeded',
+    result: { dataset_id: 'fba_shipments', run_id: 'run-from-job' },
+  };
+  const complete = () => fetch(`${context.baseUrl}/v2/jobs/${created.job.job_id}/complete`, {
+    method: 'POST',
+    headers: workerHeaders,
+    body: JSON.stringify(completeBody),
+  });
+  const completedResponse = await complete();
+  assert.equal(completedResponse.status, 200);
+  const completed = await completedResponse.json();
+  assert.equal(completed.job.state, 'succeeded');
+  assert.equal(completed.job.result.run_id, 'run-from-job');
+  assert.equal(completed.duplicate, false);
+
+  const idleRuntime = (await (await fetch(`${context.baseUrl}/v2/runtime/status`, {
+    headers: v2Headers(creator),
+  })).json()).runtime;
+  const idleFba = idleRuntime.logical_clients.find(
+    (item) => item.client_id === 'userscript.lingxing.fba.v1',
+  );
+  assert.equal(idleFba.state, 'idle');
+  assert.equal(idleFba.instances[0].current_job_id, null);
+
+  const completeRetry = await complete();
+  assert.equal(completeRetry.status, 200);
+  assert.equal((await completeRetry.json()).duplicate, true);
+
+  const statusResponse = await fetch(`${context.baseUrl}/v2/jobs/${created.job.job_id}`, {
+    headers: v2Headers(creator),
+  });
+  assert.equal(statusResponse.status, 200);
+  assert.equal((await statusResponse.json()).job.state, 'succeeded');
+
+  const emptyClaimResponse = await fetch(`${context.baseUrl}/v2/jobs/claim`, {
+    method: 'POST',
+    headers: workerHeaders,
+    body: JSON.stringify({ capabilities: [capability], wait_ms: 10 }),
+  });
+  assert.equal(emptyClaimResponse.status, 200);
+  assert.equal((await emptyClaimResponse.json()).job, null);
+});
+
+test('任务领取凭据隔离标签页，租约失效后旧执行者不能提交', async (t) => {
+  const context = await startTestBridge({
+    mutateRegistry(raw) {
+      raw.job_capabilities['lingxing.fba_shipments.refresh'].lease_seconds = 1;
+    },
+  });
+  t.after(() => context.cleanup());
+  const jobs = context.bridge.jobs;
+  const created = await jobs.create({
+    capability: 'lingxing.fba_shipments.refresh',
+    input: {},
+    ttl_seconds: 10,
+  }, { creator: { type: 'local_cli', id: 'local-cli' } });
+  const firstClaim = await jobs.claim(['lingxing.fba_shipments.refresh'], 'userscript.lingxing.fba.v1');
+  assert.equal(firstClaim.job.attempts, 1);
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const secondClaim = await jobs.claim(['lingxing.fba_shipments.refresh'], 'userscript.lingxing.fba.v1');
+  assert.equal(secondClaim.job.job_id, created.job.job_id);
+  assert.equal(secondClaim.job.attempts, 2);
+  assert.notEqual(secondClaim.claim_token, firstClaim.claim_token);
+
+  await assert.rejects(
+    jobs.complete(created.job.job_id, 'userscript.lingxing.fba.v1', {
+      claim_token: firstClaim.claim_token,
+      state: 'succeeded',
+      result: {},
+    }),
+    (error) => error.code === 'CLAIM_LOST',
+  );
+  const completed = await jobs.complete(created.job.job_id, 'userscript.lingxing.fba.v1', {
+    claim_token: secondClaim.claim_token,
+    state: 'succeeded',
+    result: { ok: true },
+  });
+  assert.equal(completed.job.state, 'succeeded');
+});
+
+test('任务 TTL、写操作确认、尺寸限制和未授权能力均被桥拦截', async (t) => {
+  const context = await startTestBridge({
+    mutateRegistry(raw) {
+      raw.job_capabilities['lingxing.write.test'] = {
+        name: '写操作测试',
+        mode: 'write',
+        default_ttl_seconds: 10,
+        max_ttl_seconds: 10,
+        lease_seconds: 2,
+        max_input_bytes: 32,
+        max_progress_bytes: 32,
+        max_result_bytes: 32,
+      };
+      raw.clients['userscript.lingxing.automation.v2'].permissions.push(
+        'job:create:lingxing.write.test',
+      );
+    },
+  });
+  t.after(() => context.cleanup());
+  const creator = await v2Pair(context);
+  const sendCreate = (body) => fetch(`${context.baseUrl}/v2/jobs`, {
+    method: 'POST',
+    headers: v2Headers(creator, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+
+  const confirmation = await sendCreate({ capability: 'lingxing.write.test', input: {} });
+  assert.equal(confirmation.status, 409);
+  assert.equal((await confirmation.json()).error.code, 'CONFIRMATION_REQUIRED');
+
+  const oversized = await sendCreate({
+    capability: 'lingxing.write.test',
+    input: { value: 'x'.repeat(100) },
+    confirmed: true,
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, 'JOB_PAYLOAD_TOO_LARGE');
+
+  const unauthorized = await sendCreate({ capability: 'not.registered', input: {} });
+  assert.equal(unauthorized.status, 403);
+  assert.equal((await unauthorized.json()).error.code, 'PERMISSION_DENIED');
+
+  const expiring = await context.bridge.jobs.create({
+    capability: 'lingxing.fba_shipments.refresh', input: {}, ttl_seconds: 1,
+  }, { creator: { type: 'local_cli', id: 'local-cli' } });
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const expired = await context.bridge.jobs.get(expiring.job.job_id);
+  assert.equal(expired.state, 'expired');
+  assert.equal(expired.error.code, 'JOB_EXPIRED');
+
+  const progressLimited = await context.bridge.jobs.create({
+    capability: 'lingxing.fba_shipments.refresh', input: {}, ttl_seconds: 10,
+  }, { creator: { type: 'local_cli', id: 'local-cli' } });
+  const progressClaim = await context.bridge.jobs.claim(
+    ['lingxing.fba_shipments.refresh'],
+    'userscript.lingxing.fba.v1',
+  );
+  await assert.rejects(
+    context.bridge.jobs.complete(progressLimited.job.job_id, 'userscript.lingxing.fba.v1', {
+      claim_token: progressClaim.claim_token,
+      state: 'succeeded',
+      result: {},
+      progress: { text: 'x'.repeat(70_000) },
+    }),
+    (error) => error.code === 'JOB_PAYLOAD_TOO_LARGE',
+  );
+});
+
+test('活动索引让领取跳过历史终态文件，孤儿幂等索引可以自愈', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+  const jobs = context.bridge.jobs;
+  const capability = 'lingxing.fba_shipments.refresh';
+
+  const finished = await jobs.create(
+    { capability, input: {}, idempotency_key: 'finished-index-test' },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+  const finishedClaim = await jobs.claim([capability], 'userscript.lingxing.fba.v1');
+  await jobs.complete(finished.job.job_id, 'userscript.lingxing.fba.v1', {
+    claim_token: finishedClaim.claim_token,
+    state: 'succeeded',
+    result: {},
+  });
+  const activeAfterComplete = JSON.parse(await fs.readFile(jobs.activeIndexPath, 'utf8'));
+  assert.equal(activeAfterComplete.job_ids.includes(finished.job.job_id), false);
+
+  // 即使历史终态文件损坏，claim 也只读取活动索引，不会扫描整个历史目录。
+  await fs.writeFile(jobs.itemPath(finished.job.job_id), '{ intentionally broken history');
+  jobs.lastCleanupAt = 0;
+  const pending = await jobs.create(
+    { capability, input: {} },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+  const pendingClaim = await jobs.claim([capability], 'userscript.lingxing.fba.v1');
+  assert.equal(pendingClaim.job.job_id, pending.job.job_id);
+  const quarantined = await fs.readdir(jobs.quarantineDir);
+  assert.equal(quarantined.some((name) => name.startsWith(`${finished.job.job_id}.json.`)), true);
+
+  const orphaned = await jobs.create(
+    { capability, input: {}, idempotency_key: 'orphan-index-test' },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+  await fs.unlink(jobs.itemPath(orphaned.job.job_id));
+  const recreated = await jobs.create(
+    { capability, input: {}, idempotency_key: 'orphan-index-test' },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+  assert.equal(recreated.duplicate, false);
+  assert.notEqual(recreated.job.job_id, orphaned.job.job_id);
+});
+
+test('活动索引作为缓存会低频从任务文件重建', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+  const jobs = context.bridge.jobs;
+  const capability = 'lingxing.fba_shipments.refresh';
+  const created = await jobs.create(
+    { capability, input: {} },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+
+  // 模拟进程在写任务文件后、写 active.json 前退出。
+  await jobs.writeActiveJobIds(new Set());
+  jobs.lastCleanupAt = 0;
+  const claim = await jobs.claim([capability], 'userscript.lingxing.fba.v1');
+  assert.equal(claim.job.job_id, created.job.job_id);
+});
+
+test('活动索引对账不会把瞬时 I/O 故障误隔离成损坏任务', async (t) => {
+  const context = await startTestBridge();
+  t.after(() => context.cleanup());
+  const jobs = context.bridge.jobs;
+  const created = await jobs.create(
+    { capability: 'lingxing.fba_shipments.refresh', input: {} },
+    { creator: { type: 'local_cli', id: 'local-cli' } },
+  );
+  const originalExpire = jobs.expireIfNeeded.bind(jobs);
+  jobs.expireIfNeeded = async () => {
+    const error = new Error('simulated access failure');
+    error.code = 'EACCES';
+    throw error;
+  };
+  try {
+    await assert.rejects(jobs.cleanup(), (error) => error.code === 'EACCES');
+  } finally {
+    jobs.expireIfNeeded = originalExpire;
+  }
+  await fs.access(jobs.itemPath(created.job.job_id));
+  assert.deepEqual(await fs.readdir(jobs.quarantineDir), []);
+});
+
+test('CLI job run --wait 能等待浏览器执行者并返回最终结果', async (t) => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'local-bridge-cli-job-'));
+  t.after(() => fs.rm(tempRoot, { recursive: true, force: true }));
+  const raw = registryRaw(
+    path.join(tempRoot, 'legacy'),
+    path.join(tempRoot, 'shared'),
+    path.join(tempRoot, 'state'),
+  );
+  const configPath = path.join(tempRoot, 'bridge.config.json');
+  const inputPath = path.join(tempRoot, 'input.json');
+  await fs.writeFile(configPath, JSON.stringify(raw));
+  await fs.writeFile(inputPath, JSON.stringify({ requested_by: 'test' }));
+  const registry = normalizeRegistry(raw);
+  const jobs = new JobStore(registry);
+  await jobs.init();
+  const env = { ...process.env, LOCAL_AUTOMATION_BRIDGE_CONFIG: configPath };
+  const cliPath = path.join(__dirname, 'bridge-cli.cjs');
+  const child = execFileAsync(process.execPath, [
+    cliPath,
+    'job',
+    'run',
+    'lingxing.fba_shipments.refresh',
+    '--input',
+    inputPath,
+    '--idempotency-key',
+    'cli-wait-test',
+    '--wait',
+    '--timeout',
+    '5',
+  ], { env, timeout: 10_000 });
+
+  let claim = null;
+  const deadline = Date.now() + 4_000;
+  while (!claim && Date.now() < deadline) {
+    claim = await jobs.claim(['lingxing.fba_shipments.refresh'], 'userscript.lingxing.fba.v1');
+    if (!claim) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.ok(claim, 'CLI 应创建可领取任务');
+  assert.equal(claim.job.input.requested_by, 'test');
+  await jobs.complete(claim.job.job_id, 'userscript.lingxing.fba.v1', {
+    claim_token: claim.claim_token,
+    state: 'succeeded',
+    result: { refreshed: true },
+  });
+  const { stdout } = await child;
+  const output = JSON.parse(stdout);
+  assert.equal(output.ok, true);
+  assert.equal(output.job.state, 'succeeded');
+  assert.equal(output.job.result.refreshed, true);
+
+  const listed = await execFileAsync(process.execPath, [cliPath, 'job', 'list-capabilities'], { env });
+  assert.deepEqual(
+    JSON.parse(listed.stdout).job_capabilities.map((item) => item.id),
+    ['lingxing.fba_shipments.refresh'],
+  );
+});
+
 test('注册表拒绝路径逃逸和保留客户端标识', () => {
   const root = path.join(os.tmpdir(), 'registry-test');
   const raw = registryRaw(path.join(root, 'legacy'), path.join(root, 'shared'), path.join(root, 'state'));
@@ -581,6 +1144,29 @@ test('注册表拒绝路径逃逸和保留客户端标识', () => {
   // JSON 对象原型污染不会成为 Object.entries 中的自有注册项。
   const normalized = normalizeRegistry(badClient);
   assert.equal(normalized.clients.__proto__, undefined);
+
+  const unsafeWrite = registryRaw(
+    path.join(root, 'legacy'),
+    path.join(root, 'shared'),
+    path.join(root, 'state'),
+  );
+  unsafeWrite.job_capabilities['unsafe.write'] = {
+    name: 'unsafe',
+    mode: 'write',
+    requires_confirmation: false,
+  };
+  assert.throws(
+    () => normalizeRegistry(unsafeWrite),
+    /写操作必须为 true/,
+  );
+
+  const invalidPermission = registryRaw(
+    path.join(root, 'legacy'),
+    path.join(root, 'shared'),
+    path.join(root, 'state'),
+  );
+  invalidPermission.clients['userscript.lingxing.automation.v2'].permissions.push('runtime:write');
+  assert.throws(() => normalizeRegistry(invalidPermission), /无效权限/);
 });
 
 test('manifest 更新保留未知数据集与顶层字段', async (t) => {

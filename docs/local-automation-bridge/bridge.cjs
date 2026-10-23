@@ -5,9 +5,12 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { createFbaShipmentsAdapter } = require('./adapters/fba-shipments.cjs');
+const { createProductsAdapter } = require('./adapters/products.cjs');
 const { AuthStore } = require('./lib/auth-store.cjs');
 const { publishConfig, readCurrent } = require('./lib/config-store.cjs');
 const { uploadArtifact } = require('./lib/artifact-store.cjs');
+const { JobStore } = require('./lib/job-store.cjs');
+const { RuntimeStore } = require('./lib/runtime-store.cjs');
 const {
   HttpError,
   SerialQueue,
@@ -22,7 +25,7 @@ const {
 } = require('./lib/common.cjs');
 const { hasPermission, loadRegistry, resolveClient } = require('./lib/registry.cjs');
 
-const BRIDGE_VERSION = '1.0.0';
+const BRIDGE_VERSION = '1.2.0';
 const LEGACY_PROTOCOL_VERSION = 1;
 const PROTOCOL_VERSION = 2;
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -78,6 +81,10 @@ function legacyDefaultClient(registry) {
   return Object.values(registry.clients).find((client) => client.pairing === 'legacy_auto') ?? null;
 }
 
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function makeAdapter(definition) {
   if (definition.adapter === 'fba_shipments_v1') {
     return createFbaShipmentsAdapter({
@@ -88,6 +95,14 @@ function makeAdapter(definition) {
       bridgeVersion: BRIDGE_VERSION,
     });
   }
+  if (definition.adapter === 'products_v1') {
+    return createProductsAdapter({
+      id: definition.id,
+      name: definition.name,
+      rootDir: definition.rootDir,
+      folder: definition.folder,
+    });
+  }
   throw new Error(`数据集 ${definition.id} 使用了未知 adapter：${definition.adapter}`);
 }
 
@@ -95,13 +110,29 @@ async function publishLocalCatalog(registry, configPath) {
   const sharedStore = registry.stores.shared;
   if (!sharedStore) return;
   const guideDir = path.join(sharedStore.rootDir, '_说明');
-  const guideTarget = path.join(guideDir, '本地自动化桥-AI接入说明.md');
-  const guideSource = path.join(__dirname, 'AI接入说明.md');
-  try {
-    await writeTextAtomic(guideTarget, await fs.readFile(guideSource, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  const guides = {
+    start_here: {
+      source: path.join(__dirname, 'AI网页能力旁路-使用说明.md'),
+      target: path.join(guideDir, 'AI网页能力旁路-使用说明.md'),
+    },
+    bridge_technical: {
+      source: path.join(__dirname, '本地自动化桥-技术接入说明.md'),
+      target: path.join(guideDir, '本地自动化桥-技术接入说明.md'),
+    },
+    compatibility: {
+      source: path.join(__dirname, 'AI接入说明.md'),
+      target: path.join(guideDir, '本地自动化桥-AI接入说明.md'),
+    },
+  };
+  for (const guide of Object.values(guides)) {
+    try {
+      await writeTextAtomic(guide.target, await fs.readFile(guide.source, 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
+  const relativeGuidePath = (guide) => path.relative(sharedStore.rootDir, guide.target)
+    .split(path.sep).join('/');
   const resourceView = (collection) => Object.values(collection).map((resource) => ({
     id: resource.id,
     name: resource.name,
@@ -113,8 +144,14 @@ async function publishLocalCatalog(registry, configPath) {
     service: 'local-automation-bridge',
     bridge_version: BRIDGE_VERSION,
     generated_at: new Date().toISOString(),
-    purpose: '供本地 AI 和脚本发现已登记资源；浏览器客户端应使用 /v2/capabilities。',
-    documentation: path.relative(sharedStore.rootDir, guideTarget).split(path.sep).join('/'),
+    purpose: '供本地 AI 和脚本发现已登记资源，并在 MCP 或正式接口能力不足时找到网页旁路；浏览器客户端应使用 /v2/capabilities。',
+    start_here: relativeGuidePath(guides.start_here),
+    documentation: relativeGuidePath(guides.compatibility),
+    guides: {
+      ai_web_fallback: relativeGuidePath(guides.start_here),
+      bridge_technical: relativeGuidePath(guides.bridge_technical),
+    },
+    fallback_trigger: '当现有 MCP、连接器或正式接口缺少任务所需的网站数据或操作时，不要直接停止；先读取 start_here。',
     module_path: __dirname,
     cli_path: path.join(__dirname, 'bridge-cli.cjs'),
     registry_path: configPath,
@@ -122,6 +159,12 @@ async function publishLocalCatalog(registry, configPath) {
     examples: {
       freight_channels: path.join(__dirname, 'examples', 'freight-channels.example.json'),
       userscript_template: path.join(__dirname, 'examples', 'userscript-template.user.js'),
+    },
+    lingxing_toolkit: {
+      development_guide: path.resolve(__dirname, '..', 'tampermonkey', '领星油猴插件开发说明.md'),
+      request_probe: path.resolve(__dirname, '..', 'tampermonkey', '领星ERP-接口探针.user.js'),
+      page_client_sdk: path.resolve(__dirname, '..', 'tampermonkey', 'lingxing-toolkit', 'lib', 'lingxing-page-client.js'),
+      feature_template: path.resolve(__dirname, '..', 'tampermonkey', 'lingxing-toolkit', 'dist', '领星ERP-功能插件模板.user.js'),
     },
     stores: Object.values(registry.stores).map((store) => ({
       id: store.id,
@@ -132,6 +175,24 @@ async function publishLocalCatalog(registry, configPath) {
       datasets: resourceView(registry.datasets),
       configs: resourceView(registry.configs),
       artifact_buckets: resourceView(registry.artifactBuckets),
+    },
+    job_capabilities: Object.values(registry.jobCapabilities).map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      description: capability.description,
+      mode: capability.mode,
+      input_mode: capability.inputMode,
+      requires_confirmation: capability.confirmationRequired,
+    })),
+    job_queue: {
+      cli: `node ${path.join(__dirname, 'bridge-cli.cjs')} job run <capability> --wait`,
+      note: '仅可创建注册表中明确登记的能力；接口探针不会领取任务，只有取得对应 job:execute 权限的正式插件才会执行；浏览器关闭或未登录时任务会保持等待直至过期。',
+    },
+    runtime_presence: {
+      heartbeat_path: '/v2/runtime/heartbeat',
+      status_path: '/v2/runtime/status',
+      ttl_seconds: registry.service.runtimePresenceTtlSeconds,
+      note: '业务插件只上报 instance_id/state/version/message；身份、能力和当前任务由桥端推导。公共状态中心按客户端聚合多个标签页。',
     },
   });
 }
@@ -157,6 +218,12 @@ async function createBridge(options = {}) {
     legacyTokenOverride: options.legacyToken ?? process.env.LINGXING_BRIDGE_TOKEN,
   });
   await auth.init();
+  const jobs = new JobStore(registry);
+  await jobs.init();
+  const runtime = new RuntimeStore(registry, {
+    ttlSeconds: registry.service.runtimePresenceTtlSeconds,
+    now: options.runtimeNow,
+  });
   const adapters = Object.create(null);
   for (const dataset of Object.values(registry.datasets)) adapters[dataset.id] = makeAdapter(dataset);
   const storeQueues = Object.create(null);
@@ -176,6 +243,25 @@ async function createBridge(options = {}) {
   const requirePermission = (client, permission) => {
     if (!hasPermission(client, permission)) {
       throw new HttpError(403, 'PERMISSION_DENIED', `客户端无权执行 ${permission}`);
+    }
+  };
+
+  const jobActions = (client, capabilityId) => ['create', 'read', 'execute']
+    .filter((action) => hasPermission(client, `job:${action}:${capabilityId}`));
+
+  const visibleJobCapabilities = (client) => jobs.listCapabilities()
+    .map((capability) => ({ ...capability, actions: jobActions(client, capability.id) }))
+    .filter((capability) => capability.actions.length > 0);
+
+  const requireJobReadAccess = (client, job) => {
+    const ownJob = job.creator?.type === 'client' && job.creator.id === client.id;
+    const claimedJob = job.claimed_by === client.id;
+    if (
+      !ownJob
+      && !claimedJob
+      && !hasPermission(client, `job:read:${job.capability}`)
+    ) {
+      throw new HttpError(403, 'PERMISSION_DENIED', `客户端无权读取任务能力 ${job.capability}`);
     }
   };
 
@@ -250,6 +336,7 @@ async function createBridge(options = {}) {
           token_required: true,
           started_at: startedAt.toISOString(),
           uptime_seconds: Math.floor(process.uptime()),
+          runtime_summary: runtime.summary(),
         });
         return;
       }
@@ -334,6 +421,170 @@ async function createBridge(options = {}) {
             configs: visible('config', registry.configs),
             artifact_buckets: visible('artifact_bucket', registry.artifactBuckets),
           },
+          job_capabilities: visibleJobCapabilities(client),
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/v2/runtime/heartbeat') {
+        const client = await authenticate(request);
+        assertContentType(request, 'application/json');
+        const body = parseJsonBuffer(await readRequestBuffer(request, 16 * 1024));
+        const instance = runtime.heartbeat(client, body);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          runtime: instance,
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname === '/v2/runtime/status') {
+        const client = await authenticate(request);
+        requirePermission(client, 'runtime:read');
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          runtime: runtime.snapshot(),
+        });
+        return;
+      }
+
+      if (
+        request.method === 'GET'
+        && (requestUrl.pathname === '/v2/job-capabilities' || requestUrl.pathname === '/v2/jobs/capabilities')
+      ) {
+        const client = await authenticate(request);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          job_capabilities: visibleJobCapabilities(client),
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/v2/jobs') {
+        const client = await authenticate(request);
+        assertContentType(request, 'application/json');
+        const body = parseJsonBuffer(await readRequestBuffer(request, registry.service.maxBodyBytes));
+        requirePermission(client, `job:create:${body.capability}`);
+        const result = await jobs.create(body, { creator: { type: 'client', id: client.id } });
+        sendJson(response, result.duplicate ? 200 : 201, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          duplicate: result.duplicate,
+          job: result.job,
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && requestUrl.pathname === '/v2/jobs/claim') {
+        const client = await authenticate(request);
+        assertContentType(request, 'application/json');
+        const body = parseJsonBuffer(await readRequestBuffer(request, 64 * 1024));
+        if (!isPlainObject(body)) throw new HttpError(400, 'INVALID_JOB_CLAIM', '领取请求必须是 JSON 对象');
+        const executable = Object.values(registry.jobCapabilities)
+          .filter((capability) => hasPermission(client, `job:execute:${capability.id}`))
+          .map((capability) => capability.id);
+        if (!executable.length) {
+          throw new HttpError(403, 'PERMISSION_DENIED', '客户端没有可执行的任务能力');
+        }
+        const requested = body.capabilities === undefined ? executable : body.capabilities;
+        if (!Array.isArray(requested) || requested.length === 0 || requested.some((id) => typeof id !== 'string')) {
+          throw new HttpError(400, 'INVALID_JOB_CLAIM', 'capabilities 必须是非空字符串数组');
+        }
+        const capabilityIds = [...new Set(requested)];
+        for (const capabilityId of capabilityIds) {
+          if (!registry.jobCapabilities[capabilityId]) {
+            throw new HttpError(404, 'CAPABILITY_NOT_FOUND', `任务能力未注册：${capabilityId}`);
+          }
+          requirePermission(client, `job:execute:${capabilityId}`);
+        }
+        const workerId = body.worker_id === undefined ? client.id : body.worker_id;
+        if (
+          typeof workerId !== 'string'
+          || !/^[a-z0-9][a-z0-9._:@-]{7,159}$/i.test(workerId)
+        ) {
+          throw new HttpError(
+            400,
+            'INVALID_WORKER_ID',
+            'worker_id 必须是 8 到 160 位安全字符串',
+          );
+        }
+        const waitMs = body.wait_ms === undefined ? 0 : Number(body.wait_ms);
+        if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 25_000) {
+          throw new HttpError(400, 'INVALID_JOB_CLAIM', 'wait_ms 必须是 0 到 25000 之间的整数');
+        }
+        runtime.touchJob(client, workerId);
+        const deadline = Date.now() + waitMs;
+        let claim = null;
+        do {
+          claim = await jobs.claim(capabilityIds, client.id, workerId);
+          if (claim || Date.now() >= deadline || request.aborted || response.destroyed) break;
+          await delay(Math.min(250, Math.max(1, deadline - Date.now())));
+        } while (true);
+        if (request.aborted || response.destroyed) return;
+        runtime.touchJob(client, workerId, claim?.job ?? null);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          ...(claim ?? { job: null, claim_token: null }),
+        });
+        return;
+      }
+
+      const jobStatusMatch = /^\/v2\/jobs\/([a-z0-9._-]+)$/i.exec(requestUrl.pathname);
+      if (request.method === 'GET' && jobStatusMatch) {
+        const client = await authenticate(request);
+        const job = await jobs.get(jobStatusMatch[1]);
+        requireJobReadAccess(client, job);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          job,
+        });
+        return;
+      }
+
+      const jobProgressMatch = /^\/v2\/jobs\/([a-z0-9._-]+)\/progress$/i.exec(requestUrl.pathname);
+      if (request.method === 'POST' && jobProgressMatch) {
+        const client = await authenticate(request);
+        const existing = await jobs.get(jobProgressMatch[1]);
+        requirePermission(client, `job:execute:${existing.capability}`);
+        assertContentType(request, 'application/json');
+        const body = parseJsonBuffer(await readRequestBuffer(request, registry.service.maxBodyBytes));
+        const job = await jobs.progress(existing.job_id, client.id, body);
+        runtime.touchJob(client, job.worker_id ?? client.id, job);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          job,
+        });
+        return;
+      }
+
+      const jobCompleteMatch = /^\/v2\/jobs\/([a-z0-9._-]+)\/complete$/i.exec(requestUrl.pathname);
+      if (request.method === 'POST' && jobCompleteMatch) {
+        const client = await authenticate(request);
+        const existing = await jobs.get(jobCompleteMatch[1]);
+        requirePermission(client, `job:execute:${existing.capability}`);
+        assertContentType(request, 'application/json');
+        const body = parseJsonBuffer(await readRequestBuffer(request, registry.service.maxBodyBytes));
+        const result = await jobs.complete(existing.job_id, client.id, body);
+        runtime.touchJob(client, result.job.worker_id ?? client.id, result.job);
+        sendJson(response, 200, {
+          ok: true,
+          request_id: currentRequestId,
+          protocol_version: PROTOCOL_VERSION,
+          duplicate: result.duplicate,
+          job: result.job,
         });
         return;
       }
@@ -458,6 +709,8 @@ async function createBridge(options = {}) {
     configPath,
     registry,
     auth,
+    jobs,
+    runtime,
     server,
     async listen() {
       await new Promise((resolve, reject) => {

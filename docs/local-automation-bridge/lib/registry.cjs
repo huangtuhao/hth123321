@@ -10,7 +10,8 @@ const {
 } = require('./common.cjs');
 
 const DEFAULT_CONFIG_PATH = path.join(__dirname, '..', 'bridge.config.json');
-const PERMISSION_PATTERN = /^(dataset:write|config:read|config:write|artifact:write):([a-z0-9][a-z0-9._-]{0,127})$/i;
+const RESOURCE_PERMISSION_PATTERN = /^(dataset:write|config:read|config:write|artifact:write|job:create|job:read|job:execute):([a-z0-9][a-z0-9._-]{0,127})$/i;
+const GLOBAL_PERMISSIONS = new Set(['runtime:read']);
 
 function expandEnvironment(value, env) {
   return String(value).replace(/%([^%]+)%/g, (match, name) => {
@@ -119,6 +120,72 @@ function normalizeRegistry(raw, options = {}) {
     });
   }
 
+  const jobCapabilities = Object.create(null);
+  for (const [id, definition] of objectEntries(raw.job_capabilities ?? {}, 'job_capabilities')) {
+    assertSafeId(id, `job_capabilities.${id}`);
+    if (!isPlainObject(definition)) throw new Error(`job_capabilities.${id} 必须是 JSON 对象`);
+    const mode = String(definition.mode ?? 'read_only');
+    if (!['read_only', 'write'].includes(mode)) {
+      throw new Error(`job_capabilities.${id}.mode 必须是 read_only 或 write`);
+    }
+    const inputMode = String(definition.input_mode ?? 'object');
+    if (!['none', 'object'].includes(inputMode)) {
+      throw new Error(`job_capabilities.${id}.input_mode 必须是 none 或 object`);
+    }
+    const maxTtlSeconds = parsePositiveInteger(
+      definition.max_ttl_seconds,
+      60 * 60,
+      `job_capabilities.${id}.max_ttl_seconds`,
+      { minimum: 1, maximum: 7 * 24 * 60 * 60 },
+    );
+    const defaultTtlSeconds = parsePositiveInteger(
+      definition.default_ttl_seconds,
+      Math.min(10 * 60, maxTtlSeconds),
+      `job_capabilities.${id}.default_ttl_seconds`,
+      { minimum: 1, maximum: maxTtlSeconds },
+    );
+    const confirmationRequired = definition.requires_confirmation === undefined
+      ? mode === 'write'
+      : definition.requires_confirmation === true;
+    if (mode === 'write' && !confirmationRequired) {
+      throw new Error(`job_capabilities.${id}.requires_confirmation 写操作必须为 true`);
+    }
+    jobCapabilities[id] = Object.freeze({
+      id,
+      name: String(definition.name ?? id),
+      description: String(definition.description ?? ''),
+      mode,
+      inputMode,
+      confirmationRequired,
+      defaultTtlSeconds,
+      maxTtlSeconds,
+      leaseSeconds: parsePositiveInteger(
+        definition.lease_seconds,
+        30,
+        `job_capabilities.${id}.lease_seconds`,
+        { minimum: 1, maximum: 10 * 60 },
+      ),
+      maxInputBytes: parsePositiveInteger(
+        definition.max_input_bytes,
+        256 * 1024,
+        `job_capabilities.${id}.max_input_bytes`,
+        { minimum: 2, maximum: 128 * 1024 * 1024 },
+      ),
+      maxResultBytes: parsePositiveInteger(
+        definition.max_result_bytes,
+        4 * 1024 * 1024,
+        `job_capabilities.${id}.max_result_bytes`,
+        { minimum: 2, maximum: 128 * 1024 * 1024 },
+      ),
+      maxProgressBytes: parsePositiveInteger(
+        definition.max_progress_bytes,
+        64 * 1024,
+        `job_capabilities.${id}.max_progress_bytes`,
+        { minimum: 2, maximum: 4 * 1024 * 1024 },
+      ),
+    });
+  }
+
   const clients = Object.create(null);
   const clientAliases = Object.create(null);
   for (const [id, definition] of objectEntries(raw.clients ?? {}, 'clients')) {
@@ -131,14 +198,17 @@ function normalizeRegistry(raw, options = {}) {
     const aliases = Array.isArray(definition.aliases) ? definition.aliases.map(String) : [];
     const permissions = Array.isArray(definition.permissions) ? definition.permissions.map(String) : [];
     for (const permission of permissions) {
-      const match = PERMISSION_PATTERN.exec(permission);
+      if (GLOBAL_PERMISSIONS.has(permission)) continue;
+      const match = RESOURCE_PERMISSION_PATTERN.exec(permission);
       if (!match) throw new Error(`clients.${id}.permissions 包含无效权限：${permission}`);
       const [, action, resourceId] = match;
       const exists = action === 'dataset:write'
         ? datasets[resourceId]
         : action.startsWith('config:')
           ? configs[resourceId]
-          : artifactBuckets[resourceId];
+          : action === 'artifact:write'
+            ? artifactBuckets[resourceId]
+            : jobCapabilities[resourceId];
       if (!exists) throw new Error(`clients.${id}.permissions 引用了未注册资源：${permission}`);
     }
     const client = Object.freeze({
@@ -177,6 +247,24 @@ function normalizeRegistry(raw, options = {}) {
       { minimum: 1024, maximum: 1024 * 1024 * 1024 },
     ),
     stateRoot,
+    jobRetentionDays: parsePositiveInteger(
+      serviceRaw.job_retention_days,
+      30,
+      'service.job_retention_days',
+      { minimum: 1, maximum: 3650 },
+    ),
+    jobHistoryLimit: parsePositiveInteger(
+      serviceRaw.job_history_limit,
+      1000,
+      'service.job_history_limit',
+      { minimum: 1, maximum: 100000 },
+    ),
+    runtimePresenceTtlSeconds: parsePositiveInteger(
+      serviceRaw.runtime_presence_ttl_seconds,
+      90,
+      'service.runtime_presence_ttl_seconds',
+      { minimum: 15, maximum: 60 * 60 },
+    ),
   });
 
   return Object.freeze({
@@ -186,6 +274,7 @@ function normalizeRegistry(raw, options = {}) {
     datasets: Object.freeze(datasets),
     configs: Object.freeze(configs),
     artifactBuckets: Object.freeze(artifactBuckets),
+    jobCapabilities: Object.freeze(jobCapabilities),
     clients: Object.freeze(clients),
     clientAliases: Object.freeze(clientAliases),
   });

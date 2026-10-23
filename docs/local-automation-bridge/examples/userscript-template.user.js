@@ -17,6 +17,8 @@
  *    不要使用远程 @require；这样脚本运行时不依赖外部代码源。
  * 3. 在 bridge.config.json 注册专用 clientId、站点来源和最小权限，然后替换下方占位值。
  * 4. 用本地 CLI 生成一次性配对码，由用户当次输入；不要把配对码或令牌写进源码。
+ * 5. 正式业务插件应每 20 秒调用 SDK heartbeat，上报每标签页独立的 instance_id 及
+ *    idle/running/error；请求只放 version/message，不放账号、URL、payload 或 job ID。
  *
  * 此模板故意不会自动发请求。完成配置后，再把 main() 接到你的按钮或业务流程。
  */

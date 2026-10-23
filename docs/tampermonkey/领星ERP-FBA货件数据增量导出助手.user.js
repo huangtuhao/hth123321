@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         领星ERP-FBA货件数据增量导出助手
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
-// @description  每日自动或手动抓取领星FBA货件，通过本地数据桥保存完整快照与增量数据。
+// @version      1.3.0
+// @description  每日、手动或经本地数据桥任务触发抓取领星FBA货件，保存完整快照与增量数据。
 // @author       Your Assistant & User
 // @match        *://erp.lingxing.com/*
 // @run-at       document-idle
@@ -20,7 +20,7 @@
   "use strict";
 
   const CONFIG = {
-    VERSION: "1.1.1",
+    VERSION: "1.3.0",
     SCHEMA_VERSION: "lingxing-fba-shipment-export/1",
     NORMALIZER_VERSION: 1,
     API_PATH: "/api/fba_shipment/showShipment_v2",
@@ -35,8 +35,6 @@
     STATUS_KEY: "LX_FBA_DELTA_STATUS_V1",
     LAST_ACCOUNT_KEY: "LX_FBA_DELTA_LAST_ACCOUNT_V1",
     LOCK_KEY: "LX_FBA_DELTA_EXPORT_LOCK_V1",
-    FLOAT_POSITION_KEY: "LX_FBA_DELTA_FLOAT_TOP_RATIO_V1",
-    DEFAULT_FLOAT_TOP_RATIO: 0.55,
     DB_NAME: "LX_FBA_DELTA_EXPORT_DB_V1",
     DB_STORE: "kv",
     LOCK_TTL_MS: 15 * 60 * 1000,
@@ -50,6 +48,20 @@
     BRIDGE_TIMEOUT_MS: 120 * 1000,
     BRIDGE_HEALTH_TIMEOUT_MS: 5000,
     BRIDGE_EXPECTED_PATH: "C:\\数据\\领星\\FBA数据",
+    BRIDGE_JOB_CAPABILITY: "lingxing.fba_shipments.refresh",
+    BRIDGE_JOB_WORKER_KEY: "LX_FBA_DELTA_JOB_WORKER_ID_V1",
+    BRIDGE_JOB_LEADER_KEY: "LX_FBA_DELTA_JOB_WORKER_LEADER_V1",
+    BRIDGE_JOB_CLAIM_WAIT_MS: 25 * 1000,
+    BRIDGE_JOB_REQUEST_TIMEOUT_MS: 40 * 1000,
+    BRIDGE_JOB_PROGRESS_TIMEOUT_MS: 15 * 1000,
+    BRIDGE_JOB_MIN_RUN_BUDGET_MS: 120 * 1000,
+    BRIDGE_JOB_COMPLETION_RESERVE_MS: 35 * 1000,
+    BRIDGE_JOB_LEADER_TTL_MS: 90 * 1000,
+    BRIDGE_JOB_LEADER_HEARTBEAT_MS: 20 * 1000,
+    BRIDGE_JOB_IDLE_RETRY_MS: 3000,
+    BRIDGE_JOB_ERROR_RETRY_MAX_MS: 60 * 1000,
+    BRIDGE_RUNTIME_HEARTBEAT_MS: 20 * 1000,
+    BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT_MS: 5000,
   };
 
   const META_ONLY_KEYS = new Set([
@@ -73,12 +85,22 @@
     running: false,
     nextAutoAttemptAt: 0,
     scheduler: null,
-    uiWatchdog: null,
     initialized: false,
     menuRegistered: false,
+    jobWorkerStarted: false,
+    jobWorkerStopped: false,
+    jobWorkerId: "",
+    jobWorkerTabId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    jobWorkerLeader: false,
+    jobWorkerLeaderHeartbeat: null,
+    activeBridgeJobId: "",
+    runtimeHeartbeatTimer: null,
+    runtimeHeartbeatInFlight: false,
+    runtimeHeartbeatPending: false,
+    runtimeHeartbeatLastWarningAt: 0,
+    runtimeHeartbeatState: "idle",
+    runtimeHeartbeatMessage: "已加载，等待任务",
   };
-  const floatingButtonInteractionNodes = new WeakSet();
-
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const pad2 = (value) => String(value).padStart(2, "0");
 
@@ -306,6 +328,98 @@
     const token = result.token.trim();
     await GM_setValue(CONFIG.BRIDGE_TOKEN_KEY, token);
     return token;
+  }
+
+  async function authorizedBridgeRequest(method, path, options = {}) {
+    let token = await getBridgeToken();
+    const request = () =>
+      bridgeRequest(method, path, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          "X-LingXing-Bridge-Token": token,
+        },
+      });
+    try {
+      return await request();
+    } catch (error) {
+      if (![401, 403].includes(Number(error?.httpStatus))) throw error;
+      await GM_setValue(CONFIG.BRIDGE_TOKEN_KEY, "");
+      token = await getBridgeToken({ forcePair: true });
+      return request();
+    }
+  }
+
+  function runtimeHeartbeatPayload() {
+    const payload = {
+      instance_id: `fba-${runtime.jobWorkerTabId}`,
+      version: CONFIG.VERSION,
+      state: runtime.runtimeHeartbeatState,
+    };
+    const message = String(runtime.runtimeHeartbeatMessage || "")
+      .replace(/[\x00-\x1f\x7f]+/g, " ")
+      .trim()
+      .slice(0, 300);
+    if (message) payload.message = message;
+    return payload;
+  }
+
+  async function sendRuntimeHeartbeat() {
+    if (runtime.jobWorkerStopped) return;
+    if (runtime.runtimeHeartbeatInFlight) {
+      runtime.runtimeHeartbeatPending = true;
+      return;
+    }
+    runtime.runtimeHeartbeatInFlight = true;
+    try {
+      await authorizedBridgeRequest("POST", "/v2/runtime/heartbeat", {
+        body: runtimeHeartbeatPayload(),
+        timeout: CONFIG.BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT_MS,
+      });
+      runtime.runtimeHeartbeatLastWarningAt = 0;
+    } catch (error) {
+      const now = Date.now();
+      if (now - runtime.runtimeHeartbeatLastWarningAt >= 60 * 1000) {
+        runtime.runtimeHeartbeatLastWarningAt = now;
+        console.warn("[领星FBA增量导出] 无法上报运行状态，将自动重试", error);
+      }
+    } finally {
+      runtime.runtimeHeartbeatInFlight = false;
+      if (runtime.runtimeHeartbeatPending && !runtime.jobWorkerStopped) {
+        runtime.runtimeHeartbeatPending = false;
+        void sendRuntimeHeartbeat();
+      }
+    }
+  }
+
+  function requestRuntimeHeartbeat() {
+    Promise.resolve(sendRuntimeHeartbeat()).catch((error) => {
+      console.warn("[领星FBA增量导出] 运行状态上报异常", error);
+    });
+  }
+
+  function setRuntimeHeartbeatState(state, message = "") {
+    if (!["idle", "running", "error"].includes(state)) return;
+    runtime.runtimeHeartbeatState = state;
+    runtime.runtimeHeartbeatMessage = String(message || "");
+    requestRuntimeHeartbeat();
+  }
+
+  function startRuntimeHeartbeat() {
+    if (runtime.runtimeHeartbeatTimer) return;
+    requestRuntimeHeartbeat();
+    runtime.runtimeHeartbeatTimer = setInterval(
+      requestRuntimeHeartbeat,
+      CONFIG.BRIDGE_RUNTIME_HEARTBEAT_MS,
+    );
+    window.addEventListener(
+      "beforeunload",
+      () => {
+        if (runtime.runtimeHeartbeatTimer) clearInterval(runtime.runtimeHeartbeatTimer);
+        runtime.runtimeHeartbeatTimer = null;
+      },
+      { once: true },
+    );
   }
 
   function validateBridgeAck(ack, expected) {
@@ -1374,13 +1488,6 @@
     const style = document.createElement("style");
     style.id = "lxde-styles";
     style.textContent = `
-      #lxde-float.lxde-float { position:fixed !important; right:0 !important; bottom:auto !important; z-index:2147483647 !important; display:flex !important; align-items:center !important; justify-content:flex-start !important; box-sizing:border-box !important; width:38px !important; height:42px !important; min-width:0 !important; min-height:0 !important; margin:0 !important; padding:0 !important; overflow:hidden !important; border:0 !important; border-radius:10px 0 0 10px !important; color:#fff !important; background:linear-gradient(135deg,#6b5cff,#5146d8) !important; box-shadow:0 4px 14px rgba(81,70,216,.35) !important; font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif !important; font-size:13px !important; font-weight:600 !important; line-height:1 !important; cursor:grab !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; user-select:none !important; touch-action:none !important; transition:width .18s ease,box-shadow .18s ease,filter .18s ease !important; }
-      #lxde-float.lxde-float:hover, #lxde-float.lxde-float:focus-visible { width:132px !important; box-shadow:0 6px 18px rgba(81,70,216,.42) !important; filter:brightness(1.04) !important; }
-      #lxde-float.lxde-float:focus-visible { outline:3px solid #ffd666 !important; outline-offset:2px !important; }
-      #lxde-float.lxde-float.lxde-dragging { width:38px !important; cursor:grabbing !important; transition:none !important; filter:none !important; }
-      .lxde-float-icon { display:flex !important; flex:0 0 38px !important; width:38px !important; height:42px !important; align-items:center !important; justify-content:center !important; font-size:17px !important; line-height:1 !important; }
-      .lxde-float-label { display:block !important; flex:0 0 auto !important; padding:0 13px 0 2px !important; white-space:nowrap !important; opacity:0 !important; transform:translateX(5px) !important; transition:opacity .15s ease,transform .18s ease !important; }
-      #lxde-float.lxde-float:hover .lxde-float-label, #lxde-float.lxde-float:focus-visible .lxde-float-label { opacity:1 !important; transform:translateX(0) !important; }
       .lxde-overlay { position:fixed; inset:0; z-index:2147483647; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); backdrop-filter:blur(2px); }
       .lxde-panel { width:min(620px,92vw); max-height:88vh; overflow:auto; background:#fff; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.22); font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif; color:#303133; }
       .lxde-header { position:relative; padding:20px 52px 16px 22px; border-bottom:1px solid #ebeef5; font-size:19px; font-weight:700; }
@@ -1438,6 +1545,7 @@
       return true;
     } catch (error) {
       const message = error?.message || String(error);
+      setRuntimeHeartbeatState("error", `无法启动 FBA 数据同步：${message}`);
       await saveStatus({
         bridgeAvailable: false,
         lastBridgeHealthAt: new Date().toISOString(),
@@ -1470,7 +1578,13 @@
 
     const mappings = {
       "lxde-last-success": formatDisplayTime(status.lastSuccessAt),
-      "lxde-last-trigger": status.lastTrigger === "scheduled" ? "每日自动" : status.lastTrigger === "manual" ? "手动运行" : "—",
+      "lxde-last-trigger": status.lastTrigger === "scheduled"
+        ? "每日自动"
+        : status.lastTrigger === "manual"
+          ? "手动运行"
+          : status.lastTrigger === "bridge_job"
+            ? "AI / 数据桥任务"
+            : "—",
       "lxde-account": accountKey || "尚未建立基线",
       "lxde-baseline-count": baseline?.records?.length ?? 0,
       "lxde-last-result": status.lastSummary
@@ -1572,9 +1686,25 @@
   // -----------------------------------------------------------------------------
   // 运行控制。
   // -----------------------------------------------------------------------------
-  async function runExport(trigger) {
-    if (runtime.running) {
-      toast("当前页面已经在抓取，请稍候", "warning");
+  async function runExport(trigger, options = {}) {
+    const throwOnError = options.throwOnError === true;
+    const showUserNotice = trigger !== "bridge_job";
+    const updateRunProgress = (message, progress) => {
+      setPanelStatus(message);
+      if (typeof options.onProgress !== "function") return;
+      try {
+        Promise.resolve(options.onProgress(message, progress)).catch((error) => {
+          console.warn("[领星FBA增量导出] 任务进度回报失败，数据抓取继续", error);
+        });
+      } catch (error) {
+        console.warn("[领星FBA增量导出] 任务进度回报失败，数据抓取继续", error);
+      }
+    };
+
+    if (runtime.running || (runtime.activeBridgeJobId && trigger !== "bridge_job")) {
+      const error = bridgeError("当前页面已经在抓取，请稍候", { code: "WORKER_BUSY" });
+      if (showUserNotice) toast(error.message, "warning");
+      if (throwOnError) throw error;
       return false;
     }
 
@@ -1589,29 +1719,44 @@
         lastAttemptTrigger: trigger,
         lastError: message,
       });
-      setPanelStatus(`失败：${message}`);
-      toast(`FBA 数据导出失败：${message}`, "error", 8000);
+      updateRunProgress(`失败：${message}`);
+      if (showUserNotice) toast(`FBA 数据导出失败：${message}`, "error", 8000);
+      if (throwOnError) throw error;
       return false;
     }
     if (!lockToken) {
-      if (trigger === "manual") toast("另一个领星标签页正在抓取，请稍候", "warning");
+      const error = bridgeError("另一个领星标签页正在抓取，请稍候", {
+        code: "WORKER_BUSY",
+      });
+      if (showUserNotice && trigger === "manual") toast(error.message, "warning");
+      if (throwOnError) throw error;
       return false;
     }
 
     runtime.running = true;
+    setRuntimeHeartbeatState(
+      "running",
+      trigger === "bridge_job"
+        ? "正在执行 AI 发起的 FBA 货件刷新"
+        : trigger === "scheduled"
+          ? "正在执行定时 FBA 货件同步"
+          : "正在执行手动 FBA 货件同步",
+    );
     setRunButtonsDisabled(true);
     const startedAt = new Date().toISOString();
     const startedMs = Date.now();
     const runId = makeRunId();
 
     try {
+      updateRunProgress("已开始处理 FBA 货件刷新任务…", 2);
       // 真正的 outbox：任何旧任务都必须先按原 run_id 幂等重发并取得严格 ACK。
       // 成功提交旧基线后，本轮仍会继续抓取一次最新数据，避免恢复后只停在旧快照。
-      await resumePendingRun(lockToken);
+      const resumed = await resumePendingRun(lockToken);
+      if (resumed) updateRunProgress("旧的待交付数据已确认写入，继续抓取最新货件…", 8);
 
-      setPanelStatus("正在等待领星页面请求环境…");
+      updateRunProgress("正在等待领星页面请求环境…", 10);
       const client = await waitForErpPostClient();
-      const fetchResult = await fetchWithRetry(client, setPanelStatus);
+      const fetchResult = await fetchWithRetry(client, (message) => updateRunProgress(message));
 
       const accountKey = deriveAccountKey(fetchResult.rows);
       if (!accountKey) {
@@ -1621,7 +1766,7 @@
       const baseline = await DB.get(baselineKey);
       assertNoSuspiciousDrop(baseline, fetchResult.rows.length);
 
-      setPanelStatus(`已取得 ${fetchResult.rows.length} 条，正在计算变化…`);
+      updateRunProgress(`已取得 ${fetchResult.rows.length} 条，正在计算变化…`, 70);
       const currentRecords = await prepareCurrentRecords(fetchResult.rows);
       const completedAt = new Date().toISOString();
       const { output, nextBaseline } = buildExport({
@@ -1651,18 +1796,47 @@
       await DB.put("pendingRun", pending);
 
       assertRunLockOwned(lockToken);
-      setPanelStatus(`数据已校验，正在写入本地数据桥（${CONFIG.BRIDGE_EXPECTED_PATH}）…`);
+      updateRunProgress(
+        `数据已校验，正在写入本地数据桥（${CONFIG.BRIDGE_EXPECTED_PATH}）…`,
+        85,
+      );
       const delivery = await deliverPendingRun(pending, lockToken);
 
       runtime.nextAutoAttemptAt = 0;
-      setPanelStatus(`完成：已写入 ${delivery.bridgePath}；新增 ${output.summary.added || 0}，修改 ${output.summary.updated || 0}，删除 ${output.summary.removed || 0}`);
-      toast(`FBA 数据已同步到本地数据桥：${delivery.bridgePath}`, "success", 6000);
-      await refreshPanelInfo();
-      return true;
+      updateRunProgress(
+        `完成：已写入 ${delivery.bridgePath}；新增 ${output.summary.added || 0}，修改 ${output.summary.updated || 0}，删除 ${output.summary.removed || 0}`,
+        100,
+      );
+      if (showUserNotice) {
+        toast(`FBA 数据已同步到本地数据桥：${delivery.bridgePath}`, "success", 6000);
+      }
+      try {
+        await refreshPanelInfo();
+      } catch (error) {
+        // 桥 ACK 与 IndexedDB 基线已经提交，面板刷新只是展示层，不能把本轮
+        // 已成功落盘的数据反向标成失败。
+        console.warn("[领星FBA增量导出] 数据已同步，但面板信息刷新失败", error);
+      }
+      if (trigger !== "bridge_job") {
+        setRuntimeHeartbeatState("idle", "最近一次 FBA 货件同步已完成");
+      }
+      return {
+        run_id: output.run_id,
+        account_key: output.account_key,
+        collected_at: output.completed_at,
+        bridge_committed_at: delivery.bridgeCommittedAt,
+        dataset_id: CONFIG.BRIDGE_DATASET,
+        dataset_path: delivery.bridgePath,
+        output_kind: output.kind,
+        source_record_count: fetchResult.rows.length,
+        record_count: nextBaseline.records.length,
+        summary: output.summary,
+      };
     } catch (error) {
       console.error("[领星FBA增量导出] 运行失败", error);
       runtime.nextAutoAttemptAt = Date.now() + CONFIG.AUTO_RETRY_MS;
       const message = error?.message || String(error);
+      setRuntimeHeartbeatState("error", `FBA 数据同步失败：${message}`);
       const isBridgeFailure = error?.code === "BRIDGE_DELIVERY_FAILED";
       const statusPatch = {
         state: isBridgeFailure ? "bridge_error" : "error",
@@ -1680,15 +1854,477 @@
         });
       }
       await saveStatus(statusPatch);
-      setPanelStatus(`失败：${message}`);
-      toast(`FBA 数据同步失败：${message}`, "error", 8000);
+      updateRunProgress(`失败：${message}`);
+      if (showUserNotice) toast(`FBA 数据同步失败：${message}`, "error", 8000);
       await refreshPanelInfo();
+      if (throwOnError) throw error;
       return false;
     } finally {
       runtime.running = false;
+      requestRuntimeHeartbeat();
       setRunButtonsDisabled(false);
       releaseRunLock(lockToken);
     }
+  }
+
+  // -----------------------------------------------------------------------------
+  // 本地数据桥任务客户端：AI 只能触发预注册能力，不能下发任意 URL、请求体、
+  // JavaScript 或磁盘路径。浏览器必须保持已登录的领星页面存活。
+  // -----------------------------------------------------------------------------
+  function v2EnvelopeData(response) {
+    if (response && typeof response === "object" && response.data && typeof response.data === "object") {
+      return response.data;
+    }
+    return response || {};
+  }
+
+  function parseClaimedBridgeJob(response) {
+    const data = v2EnvelopeData(response);
+    const rawJob = data.job || data.claimed_job || (data.job_id || data.id ? data : null);
+    if (!rawJob) return null;
+
+    const id = String(rawJob.job_id || rawJob.id || "").trim();
+    const capability = String(rawJob.capability || "").trim();
+    const claimToken = String(rawJob.claim_token || data.claim_token || "").trim();
+    if (!id || !claimToken || !capability) {
+      throw bridgeError("数据桥返回了不完整的任务认领信息", { code: "JOB_CLAIM_INVALID" });
+    }
+    return { ...rawJob, id, capability, claimToken };
+  }
+
+  async function getBridgeJobWorkerId() {
+    if (runtime.jobWorkerId) return runtime.jobWorkerId;
+    const saved = String((await GM_getValue(CONFIG.BRIDGE_JOB_WORKER_KEY, "")) || "").trim();
+    if (/^[A-Za-z0-9._:-]{8,160}$/.test(saved)) {
+      runtime.jobWorkerId = saved;
+      return saved;
+    }
+    const pageCrypto = getPageWindow()?.crypto || globalThis.crypto;
+    const random =
+      typeof pageCrypto?.randomUUID === "function"
+        ? pageCrypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const created = `lingxing-fba-userscript:${random}`;
+    await GM_setValue(CONFIG.BRIDGE_JOB_WORKER_KEY, created);
+    runtime.jobWorkerId = created;
+    return created;
+  }
+
+  async function claimBridgeJob(workerId) {
+    const response = await authorizedBridgeRequest("POST", "/v2/jobs/claim", {
+      body: {
+        capabilities: [CONFIG.BRIDGE_JOB_CAPABILITY],
+        worker_id: workerId,
+        wait_ms: CONFIG.BRIDGE_JOB_CLAIM_WAIT_MS,
+      },
+      timeout: CONFIG.BRIDGE_JOB_REQUEST_TIMEOUT_MS,
+    });
+    return parseClaimedBridgeJob(response);
+  }
+
+  async function reportBridgeJobProgress(job, workerId, message, progress) {
+    const body = {
+      claim_token: job.claimToken,
+      progress: {
+        message: String(message || "任务正在运行").slice(0, 500),
+        worker_id: workerId,
+        reported_at: new Date().toISOString(),
+      },
+    };
+    if (Number.isFinite(progress)) {
+      body.progress.percent = Math.min(100, Math.max(0, Number(progress)));
+    }
+    return authorizedBridgeRequest(
+      "POST",
+      `/v2/jobs/${encodeURIComponent(job.id)}/progress`,
+      { body, timeout: CONFIG.BRIDGE_JOB_PROGRESS_TIMEOUT_MS },
+    );
+  }
+
+  async function completeBridgeJob(job, state, details = {}) {
+    const body = {
+      claim_token: job.claimToken,
+      state,
+    };
+    if (state === "succeeded") body.result = details.result || {};
+    else body.error = details.error || { code: "REFRESH_FAILED", message: "FBA 刷新失败" };
+    return authorizedBridgeRequest(
+      "POST",
+      `/v2/jobs/${encodeURIComponent(job.id)}/complete`,
+      { body, timeout: CONFIG.BRIDGE_JOB_PROGRESS_TIMEOUT_MS },
+    );
+  }
+
+  function createBridgeJobProgressReporter(job, workerId) {
+    let lastMessage = "任务正在运行";
+    let lastProgress;
+    let pending = null;
+    let draining = null;
+    const drain = () => {
+      if (draining) return draining;
+      draining = (async () => {
+        while (pending) {
+          const current = pending;
+          pending = null;
+          try {
+            await reportBridgeJobProgress(job, workerId, current.message, current.progress);
+          } catch (error) {
+            console.warn("[领星FBA增量导出] 无法回报任务进度，刷新流程继续", error);
+          }
+        }
+      })().finally(() => {
+        draining = null;
+        if (pending) drain();
+      });
+      return draining;
+    };
+    const notify = (message, progress) => {
+      lastMessage = String(message || lastMessage);
+      if (Number.isFinite(progress)) lastProgress = Number(progress);
+      pending = { message: lastMessage, progress: lastProgress };
+      return drain();
+    };
+    return {
+      notify,
+      heartbeat: () => notify(lastMessage, lastProgress),
+      flush: async () => {
+        while (pending || draining) {
+          if (draining) await draining;
+          else await drain();
+        }
+      },
+    };
+  }
+
+  function validateBridgeJob(job) {
+    if (job.capability !== CONFIG.BRIDGE_JOB_CAPABILITY) {
+      throw bridgeError(`拒绝执行未注册能力：${job.capability}`, {
+        code: "CAPABILITY_NOT_ALLOWED",
+      });
+    }
+    const input = job.input;
+    if (input !== undefined && input !== null) {
+      if (typeof input !== "object" || Array.isArray(input)) {
+        throw bridgeError("FBA 刷新能力当前不接受任务参数", {
+          code: "UNSUPPORTED_JOB_INPUT",
+        });
+      }
+      const allowedKeys = new Set(["reason", "trigger"]);
+      if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
+        throw bridgeError("FBA 刷新任务包含未支持的参数", {
+          code: "UNSUPPORTED_JOB_INPUT",
+        });
+      }
+      for (const key of allowedKeys) {
+        if (
+          input[key] !== undefined &&
+          (typeof input[key] !== "string" || input[key].length > 200)
+        ) {
+          throw bridgeError(`FBA 刷新任务参数 ${key} 必须是 200 字以内的文本`, {
+            code: "UNSUPPORTED_JOB_INPUT",
+          });
+        }
+      }
+    }
+  }
+
+  function serializeBridgeJobError(error) {
+    const message = String(error?.message || error || "FBA 刷新失败").slice(0, 1000);
+    let code = String(
+      error?.code === "BRIDGE_DELIVERY_FAILED" && error?.cause?.code
+        ? error.cause.code
+        : error?.code || "",
+    ).trim();
+    if (!code && message.includes("未找到领星页面同源请求实例")) code = "LOGIN_REQUIRED";
+    if (!code) code = "REFRESH_FAILED";
+    const requiresUserAction = new Set([
+      "ACCOUNT_MISMATCH",
+      "LINEAGE_MISMATCH",
+      "RUN_ID_CONFLICT",
+      "PAYLOAD_TOO_LARGE",
+      "PERMISSION_DENIED",
+      "LOGIN_REQUIRED",
+      "PENDING_INVALID",
+    ]).has(code);
+    const retryable = !requiresUserAction && new Set([
+      "WORKER_BUSY",
+      "BRIDGE_ERROR",
+      "BRIDGE_HTTP_ERROR",
+      "RESOURCE_BUSY",
+      "INTERNAL_ERROR",
+      "REFRESH_FAILED",
+      "JOB_DEADLINE_TOO_CLOSE",
+    ]).has(code);
+    return {
+      code: code.slice(0, 100),
+      message,
+      retryable,
+      requires_user_action: requiresUserAction,
+    };
+  }
+
+  async function handleClaimedBridgeJob(job, workerId) {
+    runtime.activeBridgeJobId = job.id;
+    setRuntimeHeartbeatState("running", "正在执行 AI 发起的 FBA 货件刷新");
+    const reporter = createBridgeJobProgressReporter(job, workerId);
+    const heartbeat = setInterval(() => reporter.heartbeat(), 20 * 1000);
+    let terminalPresence = null;
+    try {
+      let result;
+      try {
+        validateBridgeJob(job);
+        await reporter.notify("浏览器已认领 FBA 货件刷新任务", 1);
+        const expiresAt = Date.parse(job.expires_at || "");
+        if (!Number.isFinite(expiresAt)) {
+          throw bridgeError("数据桥任务缺少有效的过期时间", {
+            code: "JOB_EXPIRY_INVALID",
+          });
+        }
+        const latestStartAt = expiresAt
+          - CONFIG.BRIDGE_JOB_MIN_RUN_BUDGET_MS
+          - CONFIG.BRIDGE_JOB_COMPLETION_RESERVE_MS;
+        while (true) {
+          if (Date.now() >= latestStartAt) {
+            throw bridgeError("任务剩余时间不足以安全完成一次 FBA 抓取，请稍后重新发起", {
+              code: "JOB_DEADLINE_TOO_CLOSE",
+            });
+          }
+          try {
+            result = await runExport("bridge_job", {
+              throwOnError: true,
+              onProgress: reporter.notify,
+            });
+            break;
+          } catch (error) {
+            if (error?.code !== "WORKER_BUSY") throw error;
+            await reporter.notify("已有导出正在运行，AI 任务等待其完成…", 1);
+            await sleep(3000);
+          }
+        }
+        if (!result || typeof result !== "object") {
+          throw bridgeError("FBA 刷新未返回可确认的结果", { code: "REFRESH_RESULT_INVALID" });
+        }
+      } catch (error) {
+        clearInterval(heartbeat);
+        const serialized = serializeBridgeJobError(error);
+        terminalPresence = {
+          state: "error",
+          message: `AI 发起的 FBA 货件刷新失败：${serialized.message}`,
+        };
+        await reporter.flush();
+        try {
+          await completeBridgeJob(job, "failed", { error: serialized });
+        } catch (completionError) {
+          console.error("[领星FBA增量导出] 任务失败且无法回报完成状态", job.id, completionError);
+          throw completionError;
+        }
+        console.warn("[领星FBA增量导出] AI 触发任务失败", job.id, serialized);
+        return;
+      }
+
+      // 刷新成功与“成功状态已回报”分开处理：若最终回报临时失败，不得再把
+      // 已落盘的数据错误标记为刷新失败。任务租约过期后可由桥端按策略重试。
+      clearInterval(heartbeat);
+      await reporter.flush();
+      await completeBridgeJob(job, "succeeded", {
+        result: {
+          capability: CONFIG.BRIDGE_JOB_CAPABILITY,
+          worker_id: workerId,
+          ...result,
+        },
+      });
+      console.info("[领星FBA增量导出] AI 触发任务已完成", job.id, result.run_id);
+      terminalPresence = {
+        state: "idle",
+        message: "最近一次 AI 发起的 FBA 货件刷新已完成",
+      };
+    } catch (error) {
+      if (!terminalPresence) {
+        terminalPresence = {
+          state: "error",
+          message: `FBA 任务状态回报失败：${error?.message || String(error)}`,
+        };
+      }
+      throw error;
+    } finally {
+      clearInterval(heartbeat);
+      if (runtime.activeBridgeJobId === job.id) runtime.activeBridgeJobId = "";
+      if (terminalPresence) {
+        setRuntimeHeartbeatState(terminalPresence.state, terminalPresence.message);
+      } else {
+        requestRuntimeHeartbeat();
+      }
+    }
+  }
+
+  async function bridgeJobWorkerLoop(shouldContinue) {
+    const workerId = await getBridgeJobWorkerId();
+    let retryMs = CONFIG.BRIDGE_JOB_IDLE_RETRY_MS;
+    while (!runtime.jobWorkerStopped && shouldContinue()) {
+      if (runtime.running) {
+        await sleep(1500);
+        continue;
+      }
+      try {
+        const job = await claimBridgeJob(workerId);
+        retryMs = CONFIG.BRIDGE_JOB_IDLE_RETRY_MS;
+        if (!job) continue;
+        await handleClaimedBridgeJob(job, workerId);
+      } catch (error) {
+        if (runtime.jobWorkerStopped || !shouldContinue()) break;
+        console.warn("[领星FBA增量导出] 数据桥任务轮询暂时不可用，将自动重试", error);
+        const jitter = Math.floor(Math.random() * 750);
+        await sleep(retryMs + jitter);
+        retryMs = Math.min(retryMs * 2, CONFIG.BRIDGE_JOB_ERROR_RETRY_MAX_MS);
+      }
+    }
+  }
+
+  function fallbackJobLeaderStorage() {
+    return getPageWindow()?.localStorage || localStorage;
+  }
+
+  function ownsFallbackJobLeadership() {
+    try {
+      const current = JSON.parse(
+        fallbackJobLeaderStorage().getItem(CONFIG.BRIDGE_JOB_LEADER_KEY) || "null",
+      );
+      return (
+        current?.owner === runtime.jobWorkerTabId &&
+        Number(current?.expiresAt) > Date.now()
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function tryAcquireFallbackJobLeadership() {
+    try {
+      const storage = fallbackJobLeaderStorage();
+      const now = Date.now();
+      const current = JSON.parse(storage.getItem(CONFIG.BRIDGE_JOB_LEADER_KEY) || "null");
+      if (
+        current?.owner &&
+        current.owner !== runtime.jobWorkerTabId &&
+        Number(current.expiresAt) > now
+      ) {
+        return false;
+      }
+      storage.setItem(
+        CONFIG.BRIDGE_JOB_LEADER_KEY,
+        JSON.stringify({
+          owner: runtime.jobWorkerTabId,
+          expiresAt: now + CONFIG.BRIDGE_JOB_LEADER_TTL_MS,
+        }),
+      );
+      // 给并发标签页一次覆盖并暴露竞争的机会，再确认最终 owner。
+      await sleep(50 + Math.floor(Math.random() * 100));
+      if (!ownsFallbackJobLeadership()) return false;
+      runtime.jobWorkerLeader = true;
+      if (!runtime.jobWorkerLeaderHeartbeat) {
+        runtime.jobWorkerLeaderHeartbeat = setInterval(() => {
+          if (!ownsFallbackJobLeadership()) {
+            runtime.jobWorkerLeader = false;
+            clearInterval(runtime.jobWorkerLeaderHeartbeat);
+            runtime.jobWorkerLeaderHeartbeat = null;
+            return;
+          }
+          try {
+            fallbackJobLeaderStorage().setItem(
+              CONFIG.BRIDGE_JOB_LEADER_KEY,
+              JSON.stringify({
+                owner: runtime.jobWorkerTabId,
+                expiresAt: Date.now() + CONFIG.BRIDGE_JOB_LEADER_TTL_MS,
+              }),
+            );
+          } catch (_) {
+            runtime.jobWorkerLeader = false;
+          }
+        }, CONFIG.BRIDGE_JOB_LEADER_HEARTBEAT_MS);
+      }
+      return true;
+    } catch (error) {
+      console.warn("[领星FBA增量导出] 无法建立任务轮询标签页租约", error);
+      return false;
+    }
+  }
+
+  function releaseFallbackJobLeadership() {
+    if (runtime.jobWorkerLeaderHeartbeat) {
+      clearInterval(runtime.jobWorkerLeaderHeartbeat);
+      runtime.jobWorkerLeaderHeartbeat = null;
+    }
+    if (!runtime.jobWorkerLeader) return;
+    runtime.jobWorkerLeader = false;
+    try {
+      const storage = fallbackJobLeaderStorage();
+      const current = JSON.parse(storage.getItem(CONFIG.BRIDGE_JOB_LEADER_KEY) || "null");
+      if (current?.owner === runtime.jobWorkerTabId) {
+        storage.removeItem(CONFIG.BRIDGE_JOB_LEADER_KEY);
+      }
+    } catch (_) {
+      // 租约最多在 TTL 后自行失效。
+    }
+  }
+
+  async function fallbackJobLeadershipLoop() {
+    while (!runtime.jobWorkerStopped) {
+      if (!(await tryAcquireFallbackJobLeadership())) {
+        await sleep(5000);
+        continue;
+      }
+      await bridgeJobWorkerLoop(() => ownsFallbackJobLeadership());
+      releaseFallbackJobLeadership();
+      if (!runtime.jobWorkerStopped) await sleep(2000);
+    }
+  }
+
+  async function webLockJobLeadershipLoop(pageLocks) {
+    while (!runtime.jobWorkerStopped) {
+      let acquired = false;
+      try {
+        await pageLocks.request(
+          CONFIG.BRIDGE_JOB_LEADER_KEY,
+          { mode: "exclusive", ifAvailable: true },
+          async (lock) => {
+            if (!lock || runtime.jobWorkerStopped) return;
+            acquired = true;
+            runtime.jobWorkerLeader = true;
+            try {
+              await bridgeJobWorkerLoop(() => runtime.jobWorkerLeader);
+            } finally {
+              runtime.jobWorkerLeader = false;
+            }
+          },
+        );
+      } catch (error) {
+        console.warn("[领星FBA增量导出] Web Locks 任务选主失败，将稍后重试", error);
+      }
+      if (!runtime.jobWorkerStopped) await sleep(acquired ? 1000 : 5000);
+    }
+  }
+
+  function startBridgeJobWorker() {
+    if (runtime.jobWorkerStarted) return;
+    runtime.jobWorkerStarted = true;
+    runtime.jobWorkerStopped = false;
+    const pageLocks = getPageWindow()?.navigator?.locks || navigator?.locks;
+    const runner = pageLocks?.request
+      ? webLockJobLeadershipLoop(pageLocks)
+      : fallbackJobLeadershipLoop();
+    Promise.resolve(runner).catch((error) => {
+      console.error("[领星FBA增量导出] 数据桥任务客户端意外停止", error);
+      runtime.jobWorkerStarted = false;
+    });
+    window.addEventListener(
+      "beforeunload",
+      () => {
+        runtime.jobWorkerStopped = true;
+        runtime.jobWorkerLeader = false;
+        releaseFallbackJobLeadership();
+      },
+      { once: true },
+    );
   }
 
   function todayScheduledTime(timeText) {
@@ -1699,7 +2335,7 @@
   }
 
   async function checkAutomaticRun() {
-    if (runtime.running || Date.now() < runtime.nextAutoAttemptAt) return;
+    if (runtime.running || runtime.activeBridgeJobId || Date.now() < runtime.nextAutoAttemptAt) return;
     const settings = await getSettings();
     if (!settings.autoEnabled) return;
 
@@ -1713,170 +2349,13 @@
     await runExport("scheduled");
   }
 
-  function normalizeFloatTopRatio(value) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return CONFIG.DEFAULT_FLOAT_TOP_RATIO;
-    return Math.min(0.92, Math.max(0.08, parsed));
-  }
-
-  function readFloatingTopRatio(fallback = CONFIG.DEFAULT_FLOAT_TOP_RATIO) {
-    try {
-      const saved = localStorage.getItem(CONFIG.FLOAT_POSITION_KEY);
-      return normalizeFloatTopRatio(saved === null ? fallback : saved);
-    } catch (_) {
-      return normalizeFloatTopRatio(fallback);
-    }
-  }
-
-  function saveFloatingTopRatio(ratio) {
-    const normalized = normalizeFloatTopRatio(ratio);
-    try {
-      localStorage.setItem(CONFIG.FLOAT_POSITION_KEY, String(normalized));
-    } catch (_) {
-      // 页面禁用 localStorage 时，本标签页内仍可正常拖动。
-    }
-    return normalized;
-  }
-
-  function applyFloatingButtonPosition(button, ratio) {
-    if (!button || button.classList.contains("lxde-dragging")) return;
-    const viewportHeight = Math.max(window.innerHeight || 0, 1);
-    const halfHeight = Math.max((button.offsetHeight || 42) / 2, 21);
-    const edgeMargin = 12;
-    const minCenter = halfHeight + edgeMargin;
-    const maxCenter = Math.max(minCenter, viewportHeight - halfHeight - edgeMargin);
-    const centerY = Math.min(maxCenter, Math.max(minCenter, normalizeFloatTopRatio(ratio) * viewportHeight));
-    const appliedRatio = centerY / viewportHeight;
-    button.dataset.lxdeTopRatio = String(appliedRatio);
-    button.style.setProperty("top", `${Math.round(centerY)}px`, "important");
-    button.style.setProperty("transform", "translateY(-50%)", "important");
-  }
-
-  function attachFloatingButtonInteractions(button) {
-    if (floatingButtonInteractionNodes.has(button)) return;
-    floatingButtonInteractionNodes.add(button);
-
-    let dragState = null;
-
-    const finishDrag = (event) => {
-      if (!dragState || event.pointerId !== dragState.pointerId) return;
-      const completedState = dragState;
-      dragState = null;
-      if (completedState.moved) {
-        const ratio = saveFloatingTopRatio(button.dataset.lxdeTopRatio);
-        button.dataset.lxdeTopRatio = String(ratio);
-        button.dataset.lxdeSuppressClickUntil = String(Date.now() + 350);
-      }
-      button.classList.remove("lxde-dragging");
-      if (event.type !== "lostpointercapture") {
-        try {
-          button.releasePointerCapture(event.pointerId);
-        } catch (_) {
-          // 指针捕获可能已经由浏览器释放。
-        }
-      }
-    };
-
-    button.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-      const rect = button.getBoundingClientRect();
-      dragState = {
-        pointerId: event.pointerId,
-        startY: event.clientY,
-        startCenterY: rect.top + rect.height / 2,
-        buttonHeight: rect.height || 42,
-        moved: false,
-      };
-      try {
-        button.setPointerCapture(event.pointerId);
-      } catch (_) {
-        // 不支持指针捕获时，普通点击仍然可用。
-      }
-    });
-
-    button.addEventListener("pointermove", (event) => {
-      if (!dragState || event.pointerId !== dragState.pointerId) return;
-      const deltaY = event.clientY - dragState.startY;
-      if (!dragState.moved && Math.abs(deltaY) < 4) return;
-      dragState.moved = true;
-      button.classList.add("lxde-dragging");
-
-      const viewportHeight = Math.max(window.innerHeight || 0, 1);
-      const halfHeight = Math.max(dragState.buttonHeight / 2, 21);
-      const minCenter = halfHeight + 12;
-      const maxCenter = Math.max(minCenter, viewportHeight - halfHeight - 12);
-      const centerY = Math.min(maxCenter, Math.max(minCenter, dragState.startCenterY + deltaY));
-      button.dataset.lxdeTopRatio = String(centerY / viewportHeight);
-      button.style.setProperty("top", `${Math.round(centerY)}px`, "important");
-      event.preventDefault();
-    });
-
-    button.addEventListener("pointerup", finishDrag);
-    button.addEventListener("pointercancel", finishDrag);
-    button.addEventListener("lostpointercapture", finishDrag);
-    button.addEventListener("click", (event) => {
-      const suppressUntil = Number(button.dataset.lxdeSuppressClickUntil || 0);
-      if (Date.now() < suppressUntil) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      button.blur();
-      openPanel();
-    });
-  }
-
-  function createFloatingButton() {
-    let button = document.getElementById("lxde-float");
-    if (!button) {
-      button = document.createElement("button");
-      button.id = "lxde-float";
-      button.className = "lxde-float";
-    }
-    if (button.dataset.lxdeUiVersion !== "2") {
-      button.removeAttribute("style");
-      button.onclick = null;
-      button.dataset.lxdeUiVersion = "2";
-    }
-    button.type = "button";
-    if (!button.querySelector(".lxde-float-icon")) {
-      const icon = document.createElement("span");
-      icon.className = "lxde-float-icon";
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = "↻";
-      const label = document.createElement("span");
-      label.className = "lxde-float-label";
-      label.textContent = "FBA 数据桥";
-      button.replaceChildren(icon, label);
-    }
-    button.title = `FBA货件本地数据桥 v${CONFIG.VERSION}（可上下拖动）`;
-    button.setAttribute("aria-label", "打开FBA货件本地数据桥面板");
-
-    if (!button.isConnected) {
-      (document.body || document.documentElement).appendChild(button);
-    }
-    attachFloatingButtonInteractions(button);
-    const fallbackRatio = button.dataset.lxdeTopRatio || CONFIG.DEFAULT_FLOAT_TOP_RATIO;
-    applyFloatingButtonPosition(button, readFloatingTopRatio(fallbackRatio));
-    return button;
-  }
-
   function ensureUi() {
     try {
       addStyles();
+      document.getElementById("lxde-float")?.remove();
     } catch (error) {
       console.error("[领星FBA增量导出] 注入样式失败", error);
     }
-    try {
-      createFloatingButton();
-    } catch (error) {
-      console.error("[领星FBA增量导出] 注入入口按钮失败", error);
-    }
-  }
-
-  function startUiWatchdog() {
-    if (runtime.uiWatchdog) return;
-    runtime.uiWatchdog = setInterval(ensureUi, 2000);
   }
 
   function startScheduler() {
@@ -1893,13 +2372,7 @@
   function registerMenuCommands() {
     if (runtime.menuRegistered || typeof GM_registerMenuCommand !== "function") return;
     try {
-      GM_registerMenuCommand("立即同步领星 FBA 货件数据", () => runExport("manual"));
-      GM_registerMenuCommand("检测领星本地数据桥", testBridgeFromUi);
-      GM_registerMenuCommand("打开 FBA 本地数据桥面板", openPanel);
-      GM_registerMenuCommand("重新显示右侧 FBA 数据桥按钮", () => {
-        ensureUi();
-        toast("已重新挂载 FBA 数据桥按钮", "success");
-      });
+      GM_registerMenuCommand("领星 FBA 数据桥：显示面板", openPanel);
       runtime.menuRegistered = true;
     } catch (error) {
       console.error("[领星FBA增量导出] 注册油猴菜单失败", error);
@@ -1911,11 +2384,20 @@
     registerMenuCommands();
     if (runtime.initialized) return;
     runtime.initialized = true;
-    startUiWatchdog();
     try {
       startScheduler();
     } catch (error) {
       console.error("[领星FBA增量导出] 启动每日调度失败，但手动入口仍可使用", error);
+    }
+    try {
+      startRuntimeHeartbeat();
+    } catch (error) {
+      console.error("[领星FBA增量导出] 启动运行状态上报失败，但数据同步仍可使用", error);
+    }
+    try {
+      startBridgeJobWorker();
+    } catch (error) {
+      console.error("[领星FBA增量导出] 启动数据桥任务客户端失败，但原有导出入口仍可使用", error);
     }
     console.info("[领星FBA增量导出] 已加载", CONFIG.VERSION, localDay());
   }

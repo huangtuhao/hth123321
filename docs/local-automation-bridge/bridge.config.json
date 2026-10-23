@@ -4,7 +4,10 @@
     "host": "127.0.0.1",
     "port": 32145,
     "max_body_bytes": 134217728,
-    "state_root": "%LOCALAPPDATA%\\LocalAutomationBridge"
+    "state_root": "%LOCALAPPDATA%\\LocalAutomationBridge",
+    "job_retention_days": 30,
+    "job_history_limit": 1000,
+    "runtime_presence_ttl_seconds": 90
   },
   "stores": {
     "lingxing": {
@@ -22,6 +25,12 @@
       "store": "lingxing",
       "folder": "FBA数据",
       "adapter": "fba_shipments_v1"
+    },
+    "products": {
+      "name": "产品列表",
+      "store": "lingxing",
+      "folder": "产品数据",
+      "adapter": "products_v1"
     }
   },
   "configs": {
@@ -39,6 +48,41 @@
       "folder": "文件\\领星FBA",
       "max_bytes": 268435456,
       "allowed_extensions": [".pdf", ".zip", ".xlsx", ".xls", ".csv", ".json"]
+    },
+    "lingxing_request_samples": {
+      "name": "领星接口样本",
+      "store": "shared",
+      "folder": "接口样本\\领星",
+      "max_bytes": 8388608,
+      "allowed_extensions": [".json"]
+    }
+  },
+  "job_capabilities": {
+    "lingxing.products.refresh": {
+      "name": "刷新领星产品列表数据",
+      "description": "在已登录的领星页面重新抓取「产品管理 → 产品列表」全量产品库，并通过 products 数据集落盘。",
+      "mode": "read_only",
+      "input_mode": "none",
+      "requires_confirmation": false,
+      "default_ttl_seconds": 600,
+      "max_ttl_seconds": 3600,
+      "lease_seconds": 180,
+      "max_input_bytes": 1024,
+      "max_progress_bytes": 8192,
+      "max_result_bytes": 65536
+    },
+    "lingxing.fba_shipments.refresh": {
+      "name": "刷新领星 FBA 货件数据",
+      "description": "在已登录的领星页面重新抓取 FBA 货件，并通过现有数据集链路落盘。",
+      "mode": "read_only",
+      "input_mode": "none",
+      "requires_confirmation": false,
+      "default_ttl_seconds": 600,
+      "max_ttl_seconds": 3600,
+      "lease_seconds": 180,
+      "max_input_bytes": 1024,
+      "max_progress_bytes": 8192,
+      "max_result_bytes": 65536
     }
   },
   "clients": {
@@ -47,7 +91,10 @@
       "aliases": ["lingxing-tampermonkey-v1"],
       "pairing": "legacy_auto",
       "allowed_origins": ["https://erp.lingxing.com"],
-      "permissions": ["dataset:write:fba_shipments"]
+      "permissions": [
+        "dataset:write:fba_shipments",
+        "job:execute:lingxing.fba_shipments.refresh"
+      ]
     },
     "userscript.lingxing.automation.v2": {
       "name": "领星浏览器自动化客户端",
@@ -58,6 +105,26 @@
         "dataset:write:fba_shipments",
         "config:read:freight_channels",
         "artifact:write:lingxing_fba"
+      ]
+    },
+    "userscript.lingxing.products.v1": {
+      "name": "领星产品列表采集助手",
+      "aliases": [],
+      "pairing": "code",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": [
+        "dataset:write:products",
+        "job:execute:lingxing.products.refresh"
+      ]
+    },
+    "userscript.lingxing.request-probe.v1": {
+      "name": "领星接口探针",
+      "aliases": [],
+      "pairing": "code",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": [
+        "artifact:write:lingxing_request_samples",
+        "runtime:read"
       ]
     }
   }
