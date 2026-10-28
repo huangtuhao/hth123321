@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         领星ERP-产品库采集助手
 // @namespace    local.lingxing.products
-// @version      1.3.0
-// @description  采集领星「产品管理 → 产品列表」全量产品库，经本地自动化桥落盘到 products 数据集；支持每日定时/间隔自动采集，并作为 lingxing.products.refresh 在线执行者供 AI 触发刷新。油猴菜单只留一个入口，功能都在页面面板里。
+// @version      1.4.0
+// @description  采集领星「产品管理 → 产品列表」全量产品库，经本地自动化桥落盘到 products 数据集；支持每日定时/间隔自动采集，并作为 lingxing.products.refresh 在线执行者供 AI 触发刷新。入口挂在领星左侧原生菜单末尾，不占用油猴菜单。
 // @author       WorkBuddy
 // @match        https://erp.lingxing.com/*
 // @run-at       document-idle
@@ -13,6 +13,8 @@
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
 // @connect      127.0.0.1
+// @updateURL    http://127.0.0.1:32145/userscripts/%E9%A2%86%E6%98%9FERP-%E4%BA%A7%E5%93%81%E5%BA%93%E9%87%87%E9%9B%86%E5%8A%A9%E6%89%8B.user.js
+// @downloadURL  http://127.0.0.1:32145/userscripts/%E9%A2%86%E6%98%9FERP-%E4%BA%A7%E5%93%81%E5%BA%93%E9%87%87%E9%9B%86%E5%8A%A9%E6%89%8B.user.js
 // ==/UserScript==
 
 /*
@@ -26,9 +28,11 @@
  *
  * 运行位置：任意 erp.lingxing.com 页面都可以（$post 挂在 Vue 根实例上，不依赖具体路由）。
  *
- * 界面（1.2.1 起）：
- *   页面加载时**不注入任何 DOM**，不常驻图标，避免遮挡领星页面内容。
- *   油猴菜单只有一条「显示功能面板」，点开才创建面板，点 × 直接从 DOM 移除。
+ * 界面（1.4.0 起，按 2026-10-28 侧栏规范）：
+ *   页面加载时面板不注入 DOM，不占用油猴菜单。
+ *   入口 = 领星左侧原生菜单末尾的 li.el-menu-item（data-lx-tool-order 300，短名「产品」），
+ *   初始化延迟约 3 秒、等原生「设置」项出现；每 2 秒 watchdog 在 Vue 重绘后自动补挂并校正到末尾。
+ *   点击切换居中面板（遮罩 + 卡片式信息行 + 顶部 toast），关闭即从 DOM 移除。
  *   面板承载：状态、立即采集、自动采集设置、配对、账号标识、诊断。
  *   状态提示条在左下角，只在有动作时短暂出现。
  *
@@ -1303,8 +1307,16 @@
   const JOB_COMPLETION_RESERVE_MS = 15000;
   const JOB_LEADER_TTL_MS = 60000;
   const JOB_LEADER_HEARTBEAT_MS = 15000;
-  const PLUGIN_VERSION = '1.3.0';
+  const PLUGIN_VERSION = '1.4.0';
   const RUNTIME_HEARTBEAT_MS = 20000;
+
+  // ---- 侧栏入口（2026-10-28 侧栏规范）--------------------------------------
+  const SIDEBAR_STYLE_ID = 'lxp-sidebar-style';
+  const SIDEBAR_ENTRY_ID = 'lxp-sidebar-entry';
+  const SIDEBAR_TOOL_ENTRY = 'products-data-bridge';
+  const SIDEBAR_TOOL_ORDER = '300';   // 探针 100、FBA 200，新插件从 300 起按 100 递增
+  const SIDEBAR_INITIAL_DELAY_MS = 3000;
+  const SIDEBAR_WATCHDOG_MS = 2000;
 
   const runtime = {
     jobWorkerStarted: false,
@@ -1316,6 +1328,7 @@
     activeBridgeJobId: '',
     nextAutoAttemptAt: 0,
     lastPanelStatus: null,
+    lastError: '',
     runtimeHeartbeatState: 'idle',
     runtimeHeartbeatMessage: '已加载，等待任务',
     runtimeHeartbeatTimer: null,
@@ -1391,13 +1404,20 @@
 
   // ------------------------------------------------------------------ 状态提示
 
+  // 面板打开时进度只进面板状态区（避免同一句话出现两处）；
+  // 面板关闭时才用左下角浮条，保证自动采集出问题时用户能看到。
   function statusBar(text, kind) {
+    panelSetStatus(text, kind);
+    if (panelOpen()) {
+      const stale = document.getElementById(STATUS_ID);
+      if (stale) stale.remove();
+      return;
+    }
     let el = document.getElementById(STATUS_ID);
     if (!el) {
       el = document.createElement('div');
       el.id = STATUS_ID;
       el.style.cssText = [
-        // 放左下角：右下角被功能面板占了，避免互相遮挡
         'position:fixed', 'left:16px', 'bottom:16px', 'z-index:2147483601',
         'max-width:360px', 'padding:10px 14px', 'border-radius:10px',
         'background:#0f172a', 'color:#e6edf7', 'font:13px/1.55 -apple-system,"Microsoft YaHei",sans-serif',
@@ -1407,8 +1427,6 @@
     }
     el.textContent = text;
     el.style.background = kind === 'error' ? '#7f1d1d' : kind === 'ok' ? '#064e3b' : '#0f172a';
-    // 面板打开时同步到面板状态区，用户不用盯着两个地方
-    panelSetStatus(text, kind);
   }
 
   function hideStatus(delay) {
@@ -1553,6 +1571,9 @@
 
   async function executeOnce(options) {
     const opts = options || {};
+    const trigger = ['manual', 'daily', 'interval', 'bridge_job'].includes(opts.trigger)
+      ? opts.trigger
+      : 'manual';
     const notify = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     // 状态条与任务进度共用同一个上报点，手动运行和 AI 任务走同一条执行链
     const report = (message, percent, kind) => {
@@ -1645,7 +1666,9 @@
       removed: ack.removed_count === undefined ? null : ack.removed_count,
       run_id: runId,
       account_key: accountKey,
+      trigger,
     });
+    runtime.lastError = '';
     hideStatus(15000);
     return {
       ack,
@@ -1672,19 +1695,22 @@
     // 缺账号标识时直接把面板摆出来，而不是弹 prompt
     if (!String(GM_getValue(ACCOUNT_KEY_STORE, '') || '').trim()) {
       openPanel();
-      panelSetStatus('还没有设置账号标识：请在上方「账号标识」里填写并保存', 'error');
+      panelSetStatus('还没有设置账号标识：请在下方「本地桥设置」里填写并保存', 'error');
+      toast('请先设置账号标识', 'warning');
       return null;
     }
     running = true;
     setRuntimeHeartbeatState('running', '正在手动采集领星产品库');
     panelSetStatus('开始采集全量产品库…');
     try {
-      const result = await executeOnce();
+      const result = await executeOnce({ trigger: 'manual' });
       setRuntimeHeartbeatState('idle', `最近一次手动采集已完成：${result.record_count} 条`);
       return result;
     } catch (error) {
+      runtime.lastError = String(error?.message || error);
       setRuntimeHeartbeatState('error', `手动采集失败：${error?.message || String(error)}`);
       statusBar(`采集失败：${error.message}`, 'error');
+      toast(`采集失败：${error.message}`, 'error', 7000);
       hideStatus(20000);
       return null;
     } finally {
@@ -1914,6 +1940,7 @@
         }
         result = await executeOnce({
           interactive: false,
+          trigger: 'bridge_job',
           onProgress: (message, percent) => reporter.notify(message, percent),
         });
         if (!result || typeof result !== 'object') {
@@ -1922,6 +1949,7 @@
       } catch (error) {
         clearInterval(heartbeat);
         const serialized = serializeJobError(error);
+        runtime.lastError = serialized.message;
         setRuntimeHeartbeatState('error', `AI 发起的产品库刷新失败：${serialized.message}`);
         await reporter.flush();
         try {
@@ -2091,20 +2119,23 @@
         ok ? 'idle' : 'error',
         ok ? '已配对，等待产品库采集任务' : '配对成功，但产品库权限不完整',
       );
+      toast(ok ? '本地桥配对成功' : '配对成功但权限不完整', ok ? 'success' : 'warning', 5000);
       renderPanel();
       return ok;
     } catch (error) {
       panelSetStatus(`配对失败：${error.message}`, 'error');
+      toast(`配对失败：${error.message}`, 'error', 7000);
       return false;
     }
   }
 
   // ------------------------------------------------------------------ 页面面板
-  // 油猴菜单只留一个「显示功能面板」入口，其余操作全部收进这里，
-  // 避免油猴菜单被一个插件的十几个命令塞满。
+  // 仿 FBA 插件的交互：油猴菜单只有一个入口，点开是居中弹窗（遮罩 + 卡片 + 顶部 toast）。
+  // 关闭即从 DOM 彻底移除，页面加载时不注入任何节点。
 
   const PANEL_ID = 'lxp-root';
   const PANEL_STYLE_ID = 'lxp-styles';
+  const PANEL_REFRESH_MS = 3000;
 
   function formatTime(ts) {
     if (!ts) return '—';
@@ -2124,62 +2155,88 @@
     return `${(hours / 24).toFixed(1)} 天前`;
   }
 
+  function triggerLabel(trigger) {
+    return trigger === 'daily'
+      ? '每日自动'
+      : trigger === 'interval'
+        ? '间隔自动'
+        : trigger === 'bridge_job'
+          ? 'AI / 本地桥任务'
+          : trigger === 'manual'
+            ? '手动采集'
+            : '—';
+  }
+
   function ensurePanelStyles() {
     if (document.getElementById(PANEL_STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = PANEL_STYLE_ID;
     style.textContent = `
-      #${PANEL_ID} { position:fixed; right:18px; bottom:18px; z-index:2147483600;
-        font:13px/1.55 system-ui,-apple-system,"Microsoft YaHei",sans-serif; color:#1f2937; }
-      #${PANEL_ID} .lxp-panel { width:352px; max-height:76vh; overflow:auto; background:#fff; border-radius:14px;
-        box-shadow:0 14px 44px rgba(15,23,42,.24); border:1px solid #e5e7eb; }
-      #${PANEL_ID} .lxp-head { display:flex; align-items:center; gap:8px; padding:13px 14px;
-        border-bottom:1px solid #eef0f5; }
-      #${PANEL_ID} .lxp-title { font-weight:700; font-size:14px; }
-      #${PANEL_ID} .lxp-badge { font-size:11px; padding:2px 7px; border-radius:999px;
+      #${PANEL_ID} .lxp-overlay { position:fixed; inset:0; z-index:2147483600;
+        display:flex; align-items:center; justify-content:center;
+        background:rgba(15,23,42,.45); backdrop-filter:blur(2px);
+        font:13px/1.6 system-ui,-apple-system,"Microsoft YaHei",sans-serif; color:#303133; }
+      #${PANEL_ID} .lxp-panel { width:min(640px,92vw); max-height:88vh; overflow:auto;
+        background:#fff; border-radius:14px; box-shadow:0 18px 56px rgba(0,0,0,.28);
+        border:1px solid #ebeef5; }
+      #${PANEL_ID} .lxp-head { position:relative; display:flex; align-items:center; gap:9px;
+        padding:18px 52px 14px 22px; border-bottom:1px solid #ebeef5; font-size:17px; font-weight:700; }
+      #${PANEL_ID} .lxp-badge { font-size:11px; font-weight:500; padding:2px 8px; border-radius:999px;
         background:#eef2ff; color:#4338ca; }
       #${PANEL_ID} .lxp-badge.warn { background:#fef3c7; color:#92400e; }
       #${PANEL_ID} .lxp-badge.ok { background:#dcfce7; color:#166534; }
-      #${PANEL_ID} .lxp-close { margin-left:auto; border:0; background:transparent; color:#9ca3af;
-        font-size:20px; line-height:1; cursor:pointer; padding:0 2px; }
-      #${PANEL_ID} .lxp-body { padding:12px 14px 14px; }
-      #${PANEL_ID} .lxp-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px 10px; margin-bottom:11px; }
-      #${PANEL_ID} .lxp-kv { display:flex; flex-direction:column; }
-      #${PANEL_ID} .lxp-kv span { color:#8a8f98; font-size:11px; }
-      #${PANEL_ID} .lxp-kv b { font-weight:600; font-size:12px; word-break:break-all; }
-      #${PANEL_ID} .lxp-actions { display:flex; gap:8px; margin-bottom:12px; }
-      #${PANEL_ID} .lxp-btn { border:0; border-radius:8px; padding:9px 12px; cursor:pointer;
-        font-size:12.5px; background:#eef1f6; color:#374151; }
+      #${PANEL_ID} .lxp-close { position:absolute; right:14px; top:11px; width:34px; height:34px;
+        border:0; background:transparent; color:#909399; font-size:24px; line-height:1; cursor:pointer; border-radius:8px; }
+      #${PANEL_ID} .lxp-close:hover { background:#f2f4f8; color:#606266; }
+      #${PANEL_ID} .lxp-body { padding:16px 22px 20px; }
+      #${PANEL_ID} .lxp-card { padding:12px 16px; margin-bottom:12px; background:#f7f8fb;
+        border:1px solid #ebeef5; border-radius:10px; }
+      #${PANEL_ID} .lxp-card-title { font-size:12.5px; font-weight:600; color:#4b5563;
+        margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+      #${PANEL_ID} .lxp-card-title .lxp-tip { font-weight:400; color:#9ca3af; font-size:11.5px; }
+      #${PANEL_ID} .lxp-row { display:flex; justify-content:space-between; align-items:center;
+        gap:18px; padding:5px 0; font-size:13px; border-top:1px dashed #eef0f5; }
+      #${PANEL_ID} .lxp-row:first-of-type { border-top:0; }
+      #${PANEL_ID} .lxp-label { color:#7a7f87; flex:none; }
+      #${PANEL_ID} .lxp-value { text-align:right; word-break:break-all; color:#1f2937; }
+      #${PANEL_ID} .lxp-value.warn { color:#b45309; }
+      #${PANEL_ID} .lxp-value.err { color:#b91c1c; }
+      #${PANEL_ID} .lxp-setting { display:flex; align-items:center; flex-wrap:wrap; gap:10px 14px; }
+      #${PANEL_ID} .lxp-setting label { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#4b5563; }
+      #${PANEL_ID} .lxp-setting input[type=radio], #${PANEL_ID} .lxp-setting input[type=checkbox] { margin:0; cursor:pointer; }
+      #${PANEL_ID} .lxp-setting input[type=time], #${PANEL_ID} .lxp-setting input[type=number] {
+        padding:6px 8px; border:1px solid #dcdfe6; border-radius:6px; font-size:13px; color:#1f2937; }
+      #${PANEL_ID} .lxp-actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 0; }
+      #${PANEL_ID} .lxp-btn { border:0; border-radius:8px; padding:10px 18px; cursor:pointer;
+        font-size:13px; background:#edf0f5; color:#4f5660; }
       #${PANEL_ID} .lxp-btn:hover { filter:brightness(.97); }
-      #${PANEL_ID} .lxp-btn:disabled { opacity:.5; cursor:not-allowed; }
-      #${PANEL_ID} .lxp-primary { background:#4f46e5; color:#fff; flex:1; }
-      #${PANEL_ID} .lxp-small { padding:7px 10px; flex:none; }
-      #${PANEL_ID} .lxp-section { border-top:1px solid #f1f3f7; padding-top:11px; margin-top:2px; }
-      #${PANEL_ID} .lxp-section-title { font-size:12px; font-weight:600; color:#4b5563; margin-bottom:8px; }
-      #${PANEL_ID} .lxp-inline { display:flex; gap:6px; margin-bottom:7px; }
-      #${PANEL_ID} input[type=text], #${PANEL_ID} input[type=time], #${PANEL_ID} input[type=number] {
-        flex:1; min-width:0; padding:7px 9px; border:1px solid #dcdfe6; border-radius:7px;
-        font-size:12px; color:#1f2937; background:#fff; }
-      #${PANEL_ID} select { padding:7px 9px; border:1px solid #dcdfe6; border-radius:7px;
-        font-size:12px; background:#fff; color:#1f2937; }
-      #${PANEL_ID} .lxp-opt { display:none; align-items:center; gap:6px; margin-top:7px; font-size:12px; color:#4b5563; }
-      #${PANEL_ID} .lxp-opt.on { display:flex; }
-      #${PANEL_ID} .lxp-hint { margin-top:8px; font-size:11.5px; color:#909399; line-height:1.6; }
-      #${PANEL_ID} .lxp-status { margin-top:11px; padding:8px 10px; border-radius:8px; background:#f4f6fb;
-        color:#4b5563; font-size:12px; white-space:pre-wrap; max-height:110px; overflow:auto; }
-      #${PANEL_ID} .lxp-status.error { background:#fef2f2; color:#b91c1c; }
+      #${PANEL_ID} .lxp-btn:disabled { opacity:.55; cursor:not-allowed; }
+      #${PANEL_ID} .lxp-primary { background:#5146d8; color:#fff; }
+      #${PANEL_ID} .lxp-success { background:#23a36d; color:#fff; }
+      #${PANEL_ID} .lxp-status { min-height:20px; margin-top:14px; padding:10px 12px; border-radius:8px;
+        background:#edf6ff; color:#337ecc; font-size:12.5px; line-height:1.6; white-space:pre-wrap;
+        max-height:130px; overflow:auto; }
       #${PANEL_ID} .lxp-status.ok { background:#f0fdf4; color:#15803d; }
+      #${PANEL_ID} .lxp-status.error { background:#fef2f2; color:#b91c1c; }
+      #${PANEL_ID} .lxp-note { margin-top:12px; color:#909399; font-size:11.5px; line-height:1.7; }
+      #${PANEL_ID} .lxp-toast { position:fixed; top:28px; left:50%; transform:translateX(-50%);
+        z-index:2147483647; max-width:min(560px,90vw); padding:11px 18px; border-radius:8px;
+        color:#fff; font-size:13.5px; line-height:1.5; box-shadow:0 8px 22px rgba(0,0,0,.2); }
+      #${PANEL_ID} .lxp-toast.info { background:#409eff; }
+      #${PANEL_ID} .lxp-toast.success { background:#23a36d; }
+      #${PANEL_ID} .lxp-toast.error { background:#e65a5a; }
+      #${PANEL_ID} .lxp-toast.warning { background:#d7942d; }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
 
+  // 面板只在打开时才存在于 DOM 里，关闭即移除
   function panelOpen() {
-    // 面板只在打开时才存在于 DOM 里，关闭即移除
-    return Boolean(document.getElementById('lxp-panel'));
+    return Boolean(document.getElementById(PANEL_ID));
   }
 
   function panelSetStatus(text, kind) {
-    // 面板没开时也要记住最近一条状态：用户打开面板能立刻看到上次跳过的原因
+    // 面板没开时也记住最近一条状态，打开面板能立刻看到（例如自动采集被跳过的原因）
     runtime.lastPanelStatus = { text: String(text), kind: kind || '' };
     const el = document.getElementById('lxp-status');
     if (!el) return;
@@ -2187,123 +2244,189 @@
     el.className = 'lxp-status' + (kind === 'error' ? ' error' : kind === 'ok' ? ' ok' : '');
   }
 
+  function toast(message, kind, durationMs) {
+    if (!panelOpen()) return;
+    document.querySelectorAll('#lxp-root .lxp-toast').forEach((el) => el.remove());
+    const el = document.createElement('div');
+    el.className = `lxp-toast ${kind || 'info'}`;
+    el.textContent = String(message);
+    const root = document.getElementById(PANEL_ID);
+    if (root) root.appendChild(el);
+    setTimeout(() => el.remove(), durationMs || 4200);
+  }
+
+  function getSelectedMode() {
+    const checked = document.querySelector(`#${PANEL_ID} input[name="lxp-auto-mode"]:checked`);
+    return checked ? checked.value : 'off';
+  }
+
   function renderPanel() {
-    if (!document.getElementById('lxp-panel')) return;
+    if (!panelOpen()) return;
     const saved = GM_getValue(LAST_RESULT_STORE, null) || {};
     const lastOk = Number(GM_getValue(LAST_OK_STORE, 0)) || 0;
     const account = String(GM_getValue(ACCOUNT_KEY_STORE, '') || '');
     const paired = Boolean(String(GM_getValue(FEATURE.bridge.tokenKey, '') || '').trim());
+    const cfg = getAutoConfig();
+    const busy = running || Boolean(runtime.activeBridgeJobId);
 
-    const set = (id, value) => {
+    const set = (id, value, cls) => {
       const el = document.getElementById(id);
-      if (el) el.textContent = value;
+      if (!el) return;
+      el.textContent = value;
+      el.className = 'lxp-value' + (cls ? ` ${cls}` : '');
     };
 
+    set('lxp-account', account ? account.replace('lingxing:company:', '') : '尚未设置', account ? '' : 'warn');
     set('lxp-count', saved.count ? `${saved.count} 条` : '—');
     set('lxp-last', lastOk ? formatTime(lastOk) : '尚未采集');
-    set('lxp-age', lastOk ? humanAge(lastOk) : '—');
-    set('lxp-account', account ? account.replace('lingxing:company:', '') : '未设置');
+    set('lxp-age', lastOk ? humanAge(lastOk) : '—', lastOk && Date.now() - lastOk > 86400000 ? 'warn' : '');
+    set('lxp-trigger-label', triggerLabel(saved.trigger));
+    set('lxp-last-result', saved.count
+      ? `新增 ${saved.added ?? '?'}　移除 ${saved.removed ?? '?'}`
+      : '—');
+    set('lxp-last-error', runtime.lastError || '无', runtime.lastError ? 'err' : '');
+
+    set('lxp-bridge-status', paired ? '已配对' : '未配对', paired ? '' : 'warn');
+    set('lxp-bridge-path', 'C:\\数据\\领星\\产品数据');
+    set('lxp-bridge-success', lastOk ? formatTime(lastOk) : '—');
+    set('lxp-active-job', busy ? (runtime.activeBridgeJobId || '正在采集') : '空闲');
+    set('lxp-capability', JOB_CAPABILITY);
 
     const badge = document.getElementById('lxp-badge');
     if (badge) {
-      badge.textContent = paired ? '桥已配对' : '未配对';
-      badge.className = 'lxp-badge ' + (paired ? 'ok' : 'warn');
+      badge.textContent = busy ? '采集中' : paired ? '桥已配对' : '未配对';
+      badge.className = 'lxp-badge ' + (busy ? '' : paired ? 'ok' : 'warn');
     }
 
-    const cfg = getAutoConfig();
-    const modeSel = document.getElementById('lxp-mode');
-    if (modeSel) modeSel.value = cfg.mode;
-    const timeInput = document.getElementById('lxp-time');
-    if (timeInput) timeInput.value = cfg.time;
-    const intervalInput = document.getElementById('lxp-interval');
-    if (intervalInput) intervalInput.value = String(cfg.intervalMin);
-    const dailyWrap = document.getElementById('lxp-daily-wrap');
-    if (dailyWrap) dailyWrap.className = 'lxp-opt' + (cfg.mode === 'daily' ? ' on' : '');
-    const intervalWrap = document.getElementById('lxp-interval-wrap');
-    if (intervalWrap) intervalWrap.className = 'lxp-opt' + (cfg.mode === 'interval' ? ' on' : '');
+    const runBtn = document.getElementById('lxp-run');
+    if (runBtn) runBtn.disabled = Boolean(running);
+    ['lxp-run', 'lxp-test-bridge', 'lxp-diag'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = Boolean(running);
+    });
 
-    const hint = document.getElementById('lxp-hint');
+    const radios = document.querySelectorAll(`#${PANEL_ID} input[name="lxp-auto-mode"]`);
+    radios.forEach((radio) => { radio.checked = radio.value === cfg.mode; });
+    const timeInput = document.getElementById('lxp-time');
+    if (timeInput && document.activeElement !== timeInput) timeInput.value = cfg.time;
+    const intervalInput = document.getElementById('lxp-interval');
+    if (intervalInput && document.activeElement !== intervalInput) {
+      intervalInput.value = String(cfg.intervalMin);
+    }
+    const hint = document.getElementById('lxp-auto-hint');
     if (hint) {
       hint.textContent = cfg.mode === 'off'
-        ? '未开启自动采集。关闭状态下只有你手动点，或 AI 通过本地桥发起时才采集。'
+        ? '当前未开启自动采集：只有你手动点，或 AI 通过本地桥发起时才采集。'
         : cfg.mode === 'daily'
-          ? `每天 ${cfg.time} 自动采集一次；到点时浏览器没开就在下次打开领星页面时补跑（当天只跑一次）。`
-          : `距上次成功满 ${cfg.intervalMin} 分钟自动采集一次；同样需要领星页面开着。`;
+          ? `每天 ${cfg.time} 采一次；到点时浏览器没开，下次打开领星页面会补跑（当天只跑一次）。`
+          : `距上次成功满 ${cfg.intervalMin} 分钟采一次。`;
     }
 
     const accountInput = document.getElementById('lxp-account-input');
-    if (accountInput && !accountInput.value) {
+    if (accountInput && document.activeElement !== accountInput && !accountInput.value) {
       accountInput.value = account ? account.replace('lingxing:company:', '') : detectCompanyHint();
     }
   }
 
   function openPanel() {
     ensurePanelStyles();
-    let root = document.getElementById(PANEL_ID);
-    if (!root) {
-      root = document.createElement('div');
-      root.id = PANEL_ID;
-      root.innerHTML = `
-        <div class="lxp-panel" id="lxp-panel">
+    if (panelOpen()) return;
+    const root = document.createElement('div');
+    root.id = PANEL_ID;
+    root.innerHTML = `
+      <div class="lxp-overlay" id="lxp-overlay">
+        <div class="lxp-panel" id="lxp-panel" role="dialog" aria-modal="true" aria-label="领星产品库本地数据桥">
           <div class="lxp-head">
-            <span class="lxp-title">领星产品库</span>
+            领星产品库 · 本地数据桥
             <span class="lxp-badge" id="lxp-badge">未配对</span>
-            <button class="lxp-close" id="lxp-close" title="关闭面板">×</button>
+            <button class="lxp-close" id="lxp-close" title="关闭">×</button>
           </div>
           <div class="lxp-body">
-            <div class="lxp-grid">
-              <div class="lxp-kv"><span>数据条数</span><b id="lxp-count">—</b></div>
-              <div class="lxp-kv"><span>上次采集</span><b id="lxp-last">—</b></div>
-              <div class="lxp-kv"><span>数据年龄</span><b id="lxp-age">—</b></div>
-              <div class="lxp-kv"><span>账号标识</span><b id="lxp-account">—</b></div>
+            <div class="lxp-card">
+              <div class="lxp-card-title">产品库数据 <span class="lxp-tip">采集自「产品管理 → 产品列表」</span></div>
+              <div class="lxp-row"><span class="lxp-label">当前账号</span><span class="lxp-value" id="lxp-account">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">产品条数</span><span class="lxp-value" id="lxp-count">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">上次成功</span><span class="lxp-value" id="lxp-last">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">数据年龄</span><span class="lxp-value" id="lxp-age">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">上次触发方式</span><span class="lxp-value" id="lxp-trigger-label">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">上次结果</span><span class="lxp-value" id="lxp-last-result">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">最近错误</span><span class="lxp-value" id="lxp-last-error">无</span></div>
             </div>
+
+            <div class="lxp-card">
+              <div class="lxp-card-title">本地数据桥</div>
+              <div class="lxp-row"><span class="lxp-label">配对状态</span><span class="lxp-value" id="lxp-bridge-status">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">数据位置</span><span class="lxp-value" id="lxp-bridge-path">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">上次写入</span><span class="lxp-value" id="lxp-bridge-success">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">当前任务</span><span class="lxp-value" id="lxp-active-job">—</span></div>
+              <div class="lxp-row"><span class="lxp-label">AI 刷新能力</span><span class="lxp-value" id="lxp-capability">—</span></div>
+            </div>
+
+            <div class="lxp-card">
+              <div class="lxp-card-title">自动采集</div>
+              <div class="lxp-setting">
+                <label><input type="radio" name="lxp-auto-mode" value="off"> 关闭</label>
+                <label><input type="radio" name="lxp-auto-mode" value="daily"> 每天定时</label>
+                <input type="time" id="lxp-time" style="width:104px">
+                <label><input type="radio" name="lxp-auto-mode" value="interval"> 按间隔</label>
+                <input type="number" id="lxp-interval" min="1" max="240" style="width:74px"> 分钟
+                <button class="lxp-btn" id="lxp-save-auto" style="padding:7px 14px">保存设置</button>
+              </div>
+              <div class="lxp-note" id="lxp-auto-hint" style="margin-top:8px"></div>
+            </div>
+
+            <div class="lxp-card">
+              <div class="lxp-card-title">本地桥设置 <span class="lxp-tip">首次用一次即可</span></div>
+              <div class="lxp-row">
+                <span class="lxp-label">配对码</span>
+                <span style="display:flex;gap:8px;flex:1;justify-content:flex-end">
+                  <input type="text" id="lxp-pair-code" placeholder="一次性配对码"
+                    style="flex:1;max-width:260px;padding:6px 9px;border:1px solid #dcdfe6;border-radius:6px;font-size:13px">
+                  <button class="lxp-btn" id="lxp-pair" style="padding:6px 14px">配对</button>
+                </span>
+              </div>
+              <div class="lxp-row">
+                <span class="lxp-label">账号标识</span>
+                <span style="display:flex;gap:8px;flex:1;justify-content:flex-end">
+                  <input type="text" id="lxp-account-input" placeholder="公司ID或简称"
+                    style="flex:1;max-width:260px;padding:6px 9px;border:1px solid #dcdfe6;border-radius:6px;font-size:13px">
+                  <button class="lxp-btn" id="lxp-save-account" style="padding:6px 14px">保存</button>
+                </span>
+              </div>
+            </div>
+
             <div class="lxp-actions">
               <button class="lxp-btn lxp-primary" id="lxp-run">立即采集全量</button>
-              <button class="lxp-btn lxp-small" id="lxp-diag">诊断</button>
+              <button class="lxp-btn" id="lxp-test-bridge">检测本地桥</button>
+              <button class="lxp-btn" id="lxp-diag">诊断</button>
             </div>
-            <div class="lxp-section">
-              <div class="lxp-section-title">自动采集</div>
-              <select id="lxp-mode">
-                <option value="off">关闭</option>
-                <option value="daily">每天定时</option>
-                <option value="interval">按间隔</option>
-              </select>
-              <span class="lxp-opt" id="lxp-daily-wrap">每天 <input type="time" id="lxp-time" style="width:96px;flex:none"></span>
-              <span class="lxp-opt" id="lxp-interval-wrap">每 <input type="number" id="lxp-interval" min="1" max="240" style="width:66px;flex:none"> 分钟</span>
-              <button class="lxp-btn lxp-small" id="lxp-save-auto" style="margin-top:8px">保存设置</button>
-              <div class="lxp-hint" id="lxp-hint"></div>
-            </div>
-            <div class="lxp-section">
-              <div class="lxp-section-title">本地桥（首次用一次即可）</div>
-              <div class="lxp-inline">
-                <input type="text" id="lxp-pair-code" placeholder="一次性配对码">
-                <button class="lxp-btn lxp-small" id="lxp-pair">配对</button>
-              </div>
-              <div class="lxp-inline">
-                <input type="text" id="lxp-account-input" placeholder="账号标识（公司ID或简称）">
-                <button class="lxp-btn lxp-small" id="lxp-save-account">保存</button>
-              </div>
-            </div>
-            <div class="lxp-status" id="lxp-status">就绪</div>
+
+            <div class="lxp-status" id="lxp-status">就绪。采集完成后会核对条数与接口 total，一致才写入本地。</div>
+            <div class="lxp-note">自动采集只有在浏览器已打开、且至少有一个已登录的领星页面存活时才能运行；未配对或未设置账号标识时不会采集。AI 也能通过本地桥队列发起刷新（能力在插件里固定，任务无法指定接口或参数）。</div>
           </div>
         </div>
-      `;
-      document.body.appendChild(root);
-      bindPanelEvents();
-    }
+      </div>
+    `;
+    document.body.appendChild(root);
+    bindPanelEvents();
     renderPanel();
-    // 面板关着时发生的状态（比如自动采集被跳过）打开后要能看见
     if (runtime.lastPanelStatus) {
       panelSetStatus(runtime.lastPanelStatus.text, runtime.lastPanelStatus.kind);
     }
+    updateSidebarEntryState();
   }
 
-  // 关闭 = 从 DOM 里彻底移除（连样式一起），页面上不留任何图标，避免遮挡领星页面
+  // 关闭 = 从 DOM 里彻底移除（面板 + 样式），页面上不留任何图标
   function closePanel() {
     const root = document.getElementById(PANEL_ID);
     if (root) root.remove();
     const style = document.getElementById(PANEL_STYLE_ID);
     if (style) style.remove();
+    if (panelTimer) {
+      clearInterval(panelTimer);
+      panelTimer = null;
+    }
+    updateSidebarEntryState();
   }
 
   function togglePanel() {
@@ -2311,34 +2434,56 @@
     else openPanel();
   }
 
+  let panelTimer = null;
+  function startPanelRefresh() {
+    if (panelTimer) clearInterval(panelTimer);
+    panelTimer = setInterval(() => { renderPanel(); }, PANEL_REFRESH_MS);
+  }
+
   function bindPanelEvents() {
     const on = (id, event, handler) => {
       const el = document.getElementById(id);
       if (el) el.addEventListener(event, handler);
     };
+    const overlay = document.getElementById('lxp-overlay');
 
     on('lxp-close', 'click', () => closePanel());
+    // 点遮罩空白处关闭，和 FBA 一致
+    if (overlay) {
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closePanel();
+      });
+    }
+
     on('lxp-run', 'click', () => { void runOnce(); });
+    on('lxp-test-bridge', 'click', () => { void testBridge(); });
     on('lxp-diag', 'click', () => showDiagnostics());
 
-    on('lxp-mode', 'change', () => {
-      const mode = document.getElementById('lxp-mode').value;
-      const dailyWrap = document.getElementById('lxp-daily-wrap');
-      const intervalWrap = document.getElementById('lxp-interval-wrap');
-      if (dailyWrap) dailyWrap.className = 'lxp-opt' + (mode === 'daily' ? ' on' : '');
-      if (intervalWrap) intervalWrap.className = 'lxp-opt' + (mode === 'interval' ? ' on' : '');
+    document.querySelectorAll(`#${PANEL_ID} input[name="lxp-auto-mode"]`).forEach((radio) => {
+      radio.addEventListener('change', () => {
+        const hint = document.getElementById('lxp-auto-hint');
+        if (!hint) return;
+        const mode = getSelectedMode();
+        hint.textContent = mode === 'off'
+          ? '关闭后只有你手动点，或 AI 通过本地桥发起时才采集。记得点「保存设置」。'
+          : mode === 'daily'
+            ? '每天到点采一次；到点时页面没开则下次打开补跑（当天只跑一次）。记得点「保存设置」。'
+            : '距上次成功满设定分钟数采一次。记得点「保存设置」。';
+      });
     });
 
     on('lxp-save-auto', 'click', () => {
-      const mode = document.getElementById('lxp-mode').value;
-      const time = String(document.getElementById('lxp-time').value || '').trim();
-      const intervalRaw = Number(document.getElementById('lxp-interval').value);
+      const mode = getSelectedMode();
+      const time = String((document.getElementById('lxp-time') || {}).value || '').trim();
+      const intervalRaw = Number((document.getElementById('lxp-interval') || {}).value);
       if (mode === 'daily' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
         panelSetStatus('每日定时需要选择有效时间（HH:MM）', 'error');
+        toast('请输入有效的每日运行时间', 'warning');
         return;
       }
       if (mode === 'interval' && (!Number.isFinite(intervalRaw) || intervalRaw < 1 || intervalRaw > 240)) {
         panelSetStatus('间隔必须是 1–240 的整数分钟', 'error');
+        toast('间隔必须是 1–240 的整数分钟', 'warning');
         return;
       }
       GM_setValue(AUTO_STORE, {
@@ -2347,11 +2492,13 @@
         intervalMin: Number.isFinite(intervalRaw) ? Math.round(intervalRaw) : 15,
       });
       renderPanel();
-      panelSetStatus(mode === 'off'
+      const text = mode === 'off'
         ? '已关闭自动采集'
         : mode === 'daily'
           ? `已开启每日自动采集：每天 ${time}`
-          : `已开启间隔采集：每 ${Math.round(intervalRaw)} 分钟`, 'ok');
+          : `已开启间隔采集：每 ${Math.round(intervalRaw)} 分钟`;
+      panelSetStatus(text, 'ok');
+      toast('自动采集设置已保存', 'success');
     });
 
     on('lxp-pair', 'click', () => {
@@ -2359,9 +2506,12 @@
       const code = String((input && input.value) || '').trim();
       if (!code) {
         panelSetStatus('请先填入一次性配对码', 'error');
+        toast('请先填入一次性配对码', 'warning');
         return;
       }
-      void pair(code).then((ok) => { if (ok && input) input.value = ''; });
+      void pair(code).then((ok) => {
+        if (ok && input) input.value = '';
+      });
     });
 
     on('lxp-save-account', 'click', () => {
@@ -2371,16 +2521,46 @@
         GM_setValue(ACCOUNT_KEY_STORE, '');
         renderPanel();
         panelSetStatus('已清除账号标识；未设置时不会采集', 'error');
+        toast('已清除账号标识', 'warning');
         return;
       }
       GM_setValue(ACCOUNT_KEY_STORE, `lingxing:company:${value}`);
       renderPanel();
       panelSetStatus(`账号标识已保存：lingxing:company:${value}`, 'ok');
+      toast('账号标识已保存', 'success');
     });
+
+    startPanelRefresh();
   }
 
-  // 页面加载时**不创建任何 DOM**：默认关闭，也不记忆上次的开关状态。
-  // 想看面板就走油猴菜单「显示功能面板」，看完点 × 彻底移除。
+  // 检测本地桥：健康检查 + 当前客户端权限（对应 FBA 的「检测数据桥」）
+  async function testBridge() {
+    const button = document.getElementById('lxp-test-bridge');
+    if (button) button.disabled = true;
+    panelSetStatus('正在检测本地数据桥…');
+    try {
+      const bridge = makeBridgeClient();
+      const capabilities = await bridge.capabilities();
+      const permissions = (capabilities && capabilities.permissions) || [];
+      const datasetOk = permissions.includes(`dataset:write:${FEATURE.bridge.datasetId}`);
+      const jobOk = permissions.includes(`job:execute:${JOB_CAPABILITY}`);
+      const text = [
+        `本地桥可用（127.0.0.1:32145）`,
+        `写数据集：${datasetOk ? '已授权' : '未授权'}`,
+        `执行 AI 刷新任务：${jobOk ? '已授权' : '未授权'}`,
+      ].join('\n');
+      panelSetStatus(text, datasetOk && jobOk ? 'ok' : 'error');
+      toast(datasetOk && jobOk ? '本地数据桥连接正常' : '桥可用，但权限不完整', datasetOk && jobOk ? 'success' : 'warning', 5000);
+      renderPanel();
+      return datasetOk && jobOk;
+    } catch (error) {
+      panelSetStatus(`本地桥不可用：${error.message}`, 'error');
+      toast(`本地数据桥检测失败：${error.message}`, 'error', 7000);
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
 
   // ------------------------------------------------------------------ 自动采集
   // 两种模式：每天定时（类似 FBA 插件）/ 按间隔。默认关闭——
@@ -2483,12 +2663,13 @@
     setRuntimeHeartbeatState('running', `${label}正在运行`);
     try {
       panelSetStatus(`${label}开始…`);
-      const result = await executeOnce({ interactive: false });
+      const result = await executeOnce({ interactive: false, trigger: cfg.mode });
       setRuntimeHeartbeatState('idle', `${label}已完成：${result.record_count} 条`);
       panelSetStatus(`${label}完成：${result.record_count} 条（新增 ${result.added_count ?? '?'} / 移除 ${result.removed_count ?? '?'}）`, 'ok');
     } catch (error) {
       // 自动运行不弹窗，失败后 30 分钟内不重试，避免反复打领星接口
       runtime.nextAutoAttemptAt = Date.now() + 30 * 60000;
+      runtime.lastError = String(error?.message || error);
       setRuntimeHeartbeatState('error', `${label}失败：${error?.message || String(error)}`);
       panelSetStatus(`${label}失败：${error.message}\n30 分钟内不再自动重试`, 'error');
       statusBar(`自动采集失败：${error.message}`, 'error');
@@ -2535,10 +2716,174 @@
     panelSetStatus(text);
   }
 
-  // 油猴菜单只保留一个入口，其余功能都在面板里
-  GM_registerMenuCommand(`${FEATURE.title}：显示功能面板`, togglePanel);
+  // ---- 侧栏入口（照 FBA 数据桥的做法，不占用油猴菜单）----------------------
+
+  function addSidebarEntryStyles() {
+    if (document.getElementById(SIDEBAR_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = SIDEBAR_STYLE_ID;
+    style.textContent = `
+      .lx-local-plugin-sidebar-entry{cursor:pointer!important}
+      .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{display:flex!important;align-items:center!important;width:100%!important;height:100%!important;color:inherit!important;text-decoration:none!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 24px!important;width:24px!important;margin-right:8px!important;font:700 17px/1 system-ui,"Microsoft YaHei",sans-serif!important;font-style:normal!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      .lx-local-plugin-sidebar-entry.is-active{color:#409eff!important;background:#ecf5ff!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry,.el-menu--collapse>.lx-local-plugin-sidebar-entry{padding-left:0!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control,.el-menu--collapse>.lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{justify-content:center!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{display:none!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{margin-right:0!important}
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function copyScopedAttributes(source, target) {
+    if (!source) return;
+    for (const attribute of source.attributes || []) {
+      if (attribute.name.startsWith('data-v-')) target.setAttribute(attribute.name, attribute.value);
+    }
+  }
+
+  function findSidebarMenu() {
+    const direct = document.querySelector('.sideBar-container > ul.el-menu[role="menubar"]');
+    if (direct) return direct;
+    return [...document.querySelectorAll('ul.el-menu[role="menubar"]')]
+      .find((menu) => menu.closest('.sideBar-container, .sideBar')) || null;
+  }
+
+  function getNativeSidebarItems(menu) {
+    return [...menu.children].filter((child) => (
+      child.matches?.('li.el-menu-item')
+      && !child.classList.contains('lx-local-plugin-sidebar-entry')
+    ));
+  }
+
+  function findSettingsSidebarItem(menu) {
+    return [...getNativeSidebarItems(menu)].reverse()
+      .find((item) => item.querySelector('i.lx_nav_set') || item.textContent.trim() === '设置') || null;
+  }
+
+  // 插件入口必须永远排在原生菜单之后：按 data-lx-tool-order 升序排到末尾
+  function normalizeSidebarPluginEntries(menu) {
+    const pluginEntries = [...menu.children].filter((child) => (
+      child.matches?.('li.lx-local-plugin-sidebar-entry') && child.dataset?.lxToolEntry
+    ));
+    if (!pluginEntries.length) return;
+    const readOrder = (entry) => {
+      const order = Number(entry.dataset.lxToolOrder);
+      return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+    };
+    const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+    pluginEntries.sort((left, right) => (
+      readOrder(left) - readOrder(right)
+      || compareText(left.dataset.lxToolEntry || '', right.dataset.lxToolEntry || '')
+      || compareText(left.id || '', right.id || '')
+    ));
+    const currentTail = [...menu.children].slice(-pluginEntries.length);
+    if (currentTail.every((entry, index) => entry === pluginEntries[index])) return;
+    pluginEntries.forEach((entry) => menu.appendChild(entry));
+  }
+
+  function updateSidebarEntryState() {
+    const entry = document.getElementById(SIDEBAR_ENTRY_ID);
+    if (!entry) return;
+    const open = panelOpen();
+    entry.classList.toggle('is-active', open);
+    entry.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function createSidebarEntry(menu) {
+    const nativeItems = getNativeSidebarItems(menu);
+    if (!nativeItems.length) return null;
+    const settingsItem = findSettingsSidebarItem(menu);
+    const referenceItem = settingsItem || nativeItems[nativeItems.length - 1] || null;
+    const referenceControl = referenceItem?.querySelector(':scope > a');
+    const referenceIcon = referenceControl?.querySelector('i');
+    const referenceLabel = referenceControl?.querySelector('span');
+
+    const entry = document.createElement('li');
+    copyScopedAttributes(referenceItem, entry);
+    entry.id = SIDEBAR_ENTRY_ID;
+    entry.className = 'el-menu-item lx-local-plugin-sidebar-entry';
+    entry.style.paddingLeft = referenceItem?.style?.paddingLeft || '20px';
+    entry.dataset.lxToolEntry = SIDEBAR_TOOL_ENTRY;
+    entry.dataset.lxToolOrder = SIDEBAR_TOOL_ORDER;
+    entry.setAttribute('role', 'menuitem');
+    entry.setAttribute('tabindex', '0');
+    entry.setAttribute('aria-haspopup', 'dialog');
+    entry.setAttribute('aria-controls', PANEL_ID);
+    entry.setAttribute('aria-expanded', 'false');
+    entry.setAttribute('aria-label', '显示或隐藏 领星产品库采集助手 面板');
+    entry.title = '领星产品库采集助手';
+
+    const control = document.createElement('a');
+    copyScopedAttributes(referenceControl, control);
+    control.className = 'lx-local-plugin-sidebar-control';
+    control.setAttribute('tabindex', '-1');
+    control.setAttribute('aria-hidden', 'true');
+
+    const icon = document.createElement('i');
+    copyScopedAttributes(referenceIcon, icon);
+    icon.className = 'lx-local-plugin-sidebar-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '产';
+
+    const label = document.createElement('span');
+    copyScopedAttributes(referenceLabel, label);
+    label.className = 'lx-local-plugin-sidebar-label';
+    label.textContent = '产品';
+
+    control.append(icon, label);
+    entry.appendChild(control);
+
+    const activate = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePanel();
+    };
+    entry.addEventListener('click', activate);
+    entry.addEventListener('keydown', activate);
+
+    menu.appendChild(entry);
+    normalizeSidebarPluginEntries(menu);
+    updateSidebarEntryState();
+    return entry;
+  }
+
+  function ensureSidebarEntry() {
+    addSidebarEntryStyles();
+    const menu = findSidebarMenu();
+    if (!menu) return;
+    // 以原生「设置」项出现为就绪信号，避免挂在未渲染完的菜单上
+    if (!findSettingsSidebarItem(menu)) return;
+    const existing = document.getElementById(SIDEBAR_ENTRY_ID);
+    if (existing?.parentElement === menu) {
+      normalizeSidebarPluginEntries(menu);
+      updateSidebarEntryState();
+      return;
+    }
+    existing?.remove();
+    createSidebarEntry(menu);
+  }
+
+  function ensureUi() {
+    try {
+      ensureSidebarEntry();
+    } catch (error) {
+      console.error('[领星产品库] 挂载左侧导航入口失败', error);
+    }
+  }
+
+  function startUiWatchdog() {
+    // 初始化延迟约 3 秒等原生菜单就绪；之后每 2 秒幂等补挂（SPA/Vue 重绘后自动恢复）
+    setTimeout(() => {
+      ensureUi();
+      setInterval(ensureUi, SIDEBAR_WATCHDOG_MS);
+    }, SIDEBAR_INITIAL_DELAY_MS);
+  }
 
   startAutoLoop();
   startJobWorker();
   startRuntimeHeartbeat();
+  startUiWatchdog();
 }());

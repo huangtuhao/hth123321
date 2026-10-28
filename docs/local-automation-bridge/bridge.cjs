@@ -25,16 +25,54 @@ const {
 } = require('./lib/common.cjs');
 const { hasPermission, loadRegistry, resolveClient } = require('./lib/registry.cjs');
 
-const BRIDGE_VERSION = '1.2.0';
+const BRIDGE_VERSION = '1.2.1';
 const LEGACY_PROTOCOL_VERSION = 1;
 const PROTOCOL_VERSION = 2;
 const REQUEST_TIMEOUT_MS = 120_000;
+
+// 油猴脚本自动更新：只读暴露 ../tampermonkey/*.user.js，供 Tampermonkey 的
+// @updateURL / @downloadURL 轮询。仅限回环访问，且只允许 .user.js / .meta.js。
+const USERSCRIPT_DIR = path.resolve(__dirname, '..', 'tampermonkey');
 
 function assertContentType(request, prefix) {
   const contentType = String(request.headers['content-type'] ?? '').toLowerCase();
   if (!contentType.startsWith(prefix)) {
     throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', `Content-Type 必须是 ${prefix}`);
   }
+}
+
+async function serveUserscript(requestUrl, response) {
+  let fileName;
+  try {
+    fileName = decodeURIComponent(requestUrl.pathname.slice('/userscripts/'.length)).trim();
+  } catch (_) {
+    throw new HttpError(400, 'BAD_PATH', '路径解码失败');
+  }
+  // 禁止路径分隔与穿越；目录固定在 USERSCRIPT_DIR，文件必须是 .user.js / .meta.js
+  if (
+    !fileName
+    || fileName.includes('..')
+    || /[\\/]/.test(fileName)
+    || (!fileName.endsWith('.user.js') && !fileName.endsWith('.meta.js'))
+  ) {
+    throw new HttpError(404, 'USERSCRIPT_NOT_FOUND', '只提供 tampermonkey 目录下的 *.user.js');
+  }
+  const resolved = path.resolve(USERSCRIPT_DIR, fileName);
+  if (path.dirname(resolved) !== USERSCRIPT_DIR) {
+    throw new HttpError(404, 'USERSCRIPT_NOT_FOUND', '只提供 tampermonkey 目录下的 *.user.js');
+  }
+  let body;
+  try {
+    body = await fs.readFile(resolved, 'utf8');
+  } catch (_) {
+    throw new HttpError(404, 'USERSCRIPT_NOT_FOUND', `文件不存在：${fileName}`);
+  }
+  response.writeHead(200, {
+    'Content-Type': 'text/javascript; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Length': Buffer.byteLength(body, 'utf8'),
+  });
+  response.end(body);
 }
 
 function extractToken(request) {
@@ -192,7 +230,7 @@ async function publishLocalCatalog(registry, configPath) {
       heartbeat_path: '/v2/runtime/heartbeat',
       status_path: '/v2/runtime/status',
       ttl_seconds: registry.service.runtimePresenceTtlSeconds,
-      note: '业务插件只上报 instance_id/state/version/message；身份、能力和当前任务由桥端推导。公共状态中心按客户端聚合多个标签页。',
+      note: '业务插件只上报 instance_id/state/version/message；身份、能力和当前任务由桥端推导。诊断快照按客户端聚合多个标签页。',
     },
   });
 }
@@ -338,6 +376,11 @@ async function createBridge(options = {}) {
           uptime_seconds: Math.floor(process.uptime()),
           runtime_summary: runtime.summary(),
         });
+        return;
+      }
+
+      if (request.method === 'GET' && requestUrl.pathname.startsWith('/userscripts/')) {
+        await serveUserscript(requestUrl, response);
         return;
       }
 

@@ -89,7 +89,7 @@ node <cli_path> job status <job-id>
 
 AI 不应把 `pending` 误报成成功。只有 `succeeded` 是成功终态；`failed` 和 `expired` 都应读取结构化错误并向用户说明下一步。长时间 `pending` 通常不是接口正在慢慢返回，而是没有在线 worker。
 
-用户也可以在领星页面查看“领星自动化中心”状态条：收起时显示在线功能、运行中和异常数量，展开后显示已配对业务插件的状态。它适合判断“浏览器执行者是否在线”，但不是任务完成证明；最终仍以 job 终态和正式数据 manifest 为准。旧业务插件只有完成一次 runtime heartbeat 兼容更新后才会出现在这里。
+用户可以查看对应业务插件自己的左侧导航入口和状态面板。例如 FBA 插件加载后会在领星左侧导航显示短名“FBA”，悬停显示完整名称“FBA 数据桥”，点击可切换最近运行结果、错误和设置面板；导航收起时仍会保留图标。入口只能说明该页面已加载插件；最终成功仍以 job 终态和正式数据 manifest 为准。
 
 对 `lingxing.fba_shipments.refresh`，成功后读取 `C:\数据\领星\manifest.json`，确认 `datasets.fba_shipments.state` 为 `success`，再读取其 `snapshot`；不要把 job result 或 `dataset_path` 当成货件记录数组。
 

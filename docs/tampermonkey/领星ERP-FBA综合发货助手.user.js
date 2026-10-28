@@ -8,7 +8,9 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
-// @connect      *
+// @connect      127.0.0.1
+// @updateURL    http://127.0.0.1:32145/userscripts/领星ERP-FBA综合发货助手.user.js
+// @downloadURL  http://127.0.0.1:32145/userscripts/领星ERP-FBA综合发货助手.user.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js#sha512-UnrKxsCMN9hFk7M56t4I4ckB4N/2HHi0w/7+B/1JsXIX3DmyBcsGpT3/BsuZMZf+6mAr0vP81syWtfynHJ69JA==
 // ==/UserScript==
 
@@ -23,17 +25,20 @@
       {
         name: "云冠清关发票模板.xlsx",
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/e132374901afd25867688f81c5683a7c26fc456b/docs/tampermonkey/发票模板/云冠清关发票模板.xlsx",
-        sha256: "3F83FF6B40673B786C69F669B88413E9B04AB0654B8458A90F7BE0CFF7459D95",
+        sha256:
+          "3F83FF6B40673B786C69F669B88413E9B04AB0654B8458A90F7BE0CFF7459D95",
       },
       {
         name: "佰通清关发票模板.xlsx",
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/e132374901afd25867688f81c5683a7c26fc456b/docs/tampermonkey/发票模板/佰通清关发票模板.xlsx",
-        sha256: "15818A648C442F9EF06325AE2C0E28FC292D9B892920DB2AD8602CE851F5B747",
+        sha256:
+          "15818A648C442F9EF06325AE2C0E28FC292D9B892920DB2AD8602CE851F5B747",
       },
       {
         name: "良逊清关发票模板.xlsx",
         url: "https://raw.githubusercontent.com/huangtuhao/hth123321/e132374901afd25867688f81c5683a7c26fc456b/docs/tampermonkey/发票模板/良逊清关发票模板.xlsx",
-        sha256: "76AA030DAB0DF9ABB2D08E1252C00324EAACCBC3C70033788F891062511C3041",
+        sha256:
+          "76AA030DAB0DF9ABB2D08E1252C00324EAACCBC3C70033788F891062511C3041",
       },
       {
         name: "中外通清关发票模板.xlsx",
@@ -166,8 +171,19 @@
 
   const UI = {
     _modals: new Map(),
-    createModal(id, title, bodyContent, footerButtons, isLarge = false, options = {}) {
-      const { flow = Workflow.current, onDismiss, allowBack = id !== "lx-main-menu" } = options;
+    createModal(
+      id,
+      title,
+      bodyContent,
+      footerButtons,
+      isLarge = false,
+      options = {},
+    ) {
+      const {
+        flow = Workflow.current,
+        onDismiss,
+        allowBack = id !== "lx-main-menu",
+      } = options;
       Workflow.check(flow);
       this.hideModal(id);
       const overlay = document.createElement("div");
@@ -176,9 +192,11 @@
       overlay.innerHTML = `<div class="lx-modal-content ${isLarge ? "large" : ""}"><div class="lx-modal-header"><span class="lx-modal-title">${escapeHtml(title)}</span><div class="lx-modal-nav">${allowBack ? '<button type="button" class="lx-modal-home">返回主页</button>' : ""}<button type="button" class="lx-modal-close" aria-label="关闭弹窗" title="关闭弹窗">×</button></div></div><div class="lx-modal-body">${bodyContent}</div>${footerButtons ? `<div class="lx-modal-footer">${footerButtons}</div>` : ""}</div>`;
       document.body.appendChild(overlay);
       this._modals.set(id, { element: overlay, flow, onDismiss });
-      overlay.querySelector(".lx-modal-close").onclick = () => Workflow.leave("close", flow);
+      overlay.querySelector(".lx-modal-close").onclick = () =>
+        Workflow.leave("close", flow);
       if (allowBack) {
-        overlay.querySelector(".lx-modal-home").onclick = () => Workflow.leave("home", flow);
+        overlay.querySelector(".lx-modal-home").onclick = () =>
+          Workflow.leave("home", flow);
       }
       overlay
         .querySelector(".lx-modal-content")
@@ -248,12 +266,46 @@
         return null;
       }
       return new Promise((resolve) => {
+        const startedAt = Date.now();
+        let headersLogged = false;
+        let progressLogged = false;
+
+        console.info(`[LX图片诊断] 开始：${safeUrl.host}${safeUrl.pathname}`);
         GM_xmlhttpRequest({
           method: "GET",
           url: safeUrl.href,
           responseType: "arraybuffer",
           onload: (res) => resolve(res.status === 200 ? res.response : null),
           onerror: () => resolve(null),
+          onreadystatechange: (res) => {
+            if (res.readyState === 2 && !headersLogged) {
+              headersLogged = true;
+              console.info(
+                `[LX图片诊断] 收到响应头：${safeUrl.host}，` +
+                  `耗时 ${Date.now() - startedAt}ms，HTTP ${res.status}`,
+              );
+            }
+          },
+
+          onprogress: () => {
+            if (!progressLogged) {
+              progressLogged = true;
+              console.info(
+                `[LX图片诊断] 开始接收数据：${safeUrl.host}，` +
+                  `耗时 ${Date.now() - startedAt}ms`,
+              );
+            }
+          },
+
+          onload: (res) => {
+            console.info(
+              `[LX图片诊断] 下载结束：${safeUrl.host}，` +
+                `HTTP ${res.status}，` +
+                `耗时 ${Date.now() - startedAt}ms，` +
+                `大小 ${res.response?.byteLength ?? "未知"} bytes`,
+            );
+            finish(res.status === 200 ? res.response : null);
+          },
         });
       });
     },
@@ -284,7 +336,9 @@
       return Array.from(String(value ?? "")).length;
     },
     truncateChars(value, maxLength) {
-      return Array.from(String(value ?? "")).slice(0, maxLength).join("");
+      return Array.from(String(value ?? ""))
+        .slice(0, maxLength)
+        .join("");
     },
     formatLocalMMDD(date = new Date()) {
       const pad = (value) => String(value).padStart(2, "0");
@@ -294,8 +348,13 @@
       // 保留省略号，避免二次清洗时分解成三个点，破坏名称长度限制。
       const clean = (input) =>
         String(input ?? "")
-          .split("…").map((part) => part.normalize("NFKC")).join("…")
-          .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "")
+          .split("…")
+          .map((part) => part.normalize("NFKC"))
+          .join("…")
+          .replace(
+            /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
+            "",
+          )
           .replace(/[<>:"/\\|?*]/g, "-")
           .replace(/\s+/g, " ")
           .trim()
@@ -308,7 +367,8 @@
         safe = `_${safe}`;
       }
       if (SharedUtils.charLength(safe) > maxLength) {
-        safe = SharedUtils.truncateChars(safe, Math.max(1, maxLength - 1)) + "…";
+        safe =
+          SharedUtils.truncateChars(safe, Math.max(1, maxLength - 1)) + "…";
       }
       return safe;
     },
@@ -327,8 +387,10 @@
           }
         };
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("目录记录数据库打开失败"));
-        request.onblocked = () => reject(new Error("目录记录数据库被其他页面占用"));
+        request.onerror = () =>
+          reject(request.error || new Error("目录记录数据库打开失败"));
+        request.onblocked = () =>
+          reject(new Error("目录记录数据库被其他页面占用"));
       }).catch((error) => {
         this._dbPromise = null;
         throw error;
@@ -339,9 +401,12 @@
       const db = await this.open();
       return new Promise((resolve, reject) => {
         const tx = db.transaction(CONFIG.FS_STORE_NAME, "readonly");
-        const request = tx.objectStore(CONFIG.FS_STORE_NAME).get(CONFIG.FS_ROOT_KEY);
+        const request = tx
+          .objectStore(CONFIG.FS_STORE_NAME)
+          .get(CONFIG.FS_ROOT_KEY);
         request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error || new Error("读取保存目录失败"));
+        request.onerror = () =>
+          reject(request.error || new Error("读取保存目录失败"));
       });
     },
     async setRoot(handle) {
@@ -374,8 +439,8 @@
     isSupported() {
       return Boolean(
         window.isSecureContext &&
-          typeof window.showDirectoryPicker === "function" &&
-          typeof indexedDB !== "undefined",
+        typeof window.showDirectoryPicker === "function" &&
+        typeof indexedDB !== "undefined",
       );
     },
     init() {
@@ -408,7 +473,9 @@
       }
       let permission = "prompt";
       try {
-        permission = await this._rootHandle.queryPermission({ mode: "readwrite" });
+        permission = await this._rootHandle.queryPermission({
+          mode: "readwrite",
+        });
       } catch (error) {
         permission = "denied";
       }
@@ -472,7 +539,9 @@
         await FileHandleStore.clearRoot();
       } catch (error) {
         console.warn("清除目录记录失败:", error);
-        throw new Error("本页已清除目录，但长期记录删除失败；刷新后可能需要再清除一次");
+        throw new Error(
+          "本页已清除目录，但长期记录删除失败；刷新后可能需要再清除一次",
+        );
       }
     },
     buildProductSummaryName(
@@ -490,7 +559,10 @@
         );
         return { ...item, label, part: `${label}-${item.boxCount}箱` };
       });
-      const fullName = joinPart(prefix, normalized.map((item) => item.part).join("--"));
+      const fullName = joinPart(
+        prefix,
+        normalized.map((item) => item.part).join("--"),
+      );
       const limit = maxLength;
       if (SharedUtils.charLength(fullName) <= limit) return fullName;
 
@@ -500,7 +572,8 @@
           1,
           limit - SharedUtils.charLength(joinPart(prefix, ending)) - 1,
         );
-        const label = SharedUtils.truncateChars(normalized[0].label, room) + "…";
+        const label =
+          SharedUtils.truncateChars(normalized[0].label, room) + "…";
         return joinPart(prefix, `${label}${ending}`);
       }
 
@@ -518,7 +591,10 @@
         const ending = `-${first.boxCount}箱`;
         const fixed = `${joinPart(prefix, ending)}${suffix}`;
         const room = Math.max(1, limit - SharedUtils.charLength(fixed) - 1);
-        result = joinPart(prefix, `${SharedUtils.truncateChars(first.label, room)}…${ending}`);
+        result = joinPart(
+          prefix,
+          `${SharedUtils.truncateChars(first.label, room)}…${ending}`,
+        );
       }
       return result + suffix;
     },
@@ -530,9 +606,11 @@
       });
     },
     buildBoxLabelsFilename(stats, totalPhysicalBoxes) {
-      return this.buildProductSummaryName(stats, totalPhysicalBoxes, {
-        maxLength: CONFIG.BOX_LABEL_FILENAME_MAX_LENGTH,
-      }) + ".pdf";
+      return (
+        this.buildProductSummaryName(stats, totalPhysicalBoxes, {
+          maxLength: CONFIG.BOX_LABEL_FILENAME_MAX_LENGTH,
+        }) + ".pdf"
+      );
     },
     async beginBatch(folderName, { forceBrowserDownload = false, flow } = {}) {
       Workflow.check(flow);
@@ -554,15 +632,20 @@
         return batch;
       }
       try {
-        const permission = await this._rootHandle.queryPermission({ mode: "readwrite" });
+        const permission = await this._rootHandle.queryPermission({
+          mode: "readwrite",
+        });
         Workflow.check(flow);
         if (permission !== "granted") {
           batch.disabledReason = "目录权限已失效";
           return batch;
         }
-        batch.directoryHandle = await this._rootHandle.getDirectoryHandle(folderName, {
-          create: true,
-        });
+        batch.directoryHandle = await this._rootHandle.getDirectoryHandle(
+          folderName,
+          {
+            create: true,
+          },
+        );
         Workflow.check(flow);
         batch.mode = "filesystem";
       } catch (error) {
@@ -602,20 +685,25 @@
     },
     splitFilename(filename, extension = ".xlsx") {
       const safeExtension = this.normalizeExtension(extension);
-      const ending = safeExtension === ".pdf" ? /(?:\.pdf)+$/i : /(?:\.xlsx)+$/i;
+      const ending =
+        safeExtension === ".pdf" ? /(?:\.pdf)+$/i : /(?:\.xlsx)+$/i;
       return {
         stem: String(filename).replace(ending, ""),
         extension: safeExtension,
       };
     },
     sanitizeOutputFilename(filename, extension = ".xlsx") {
-      const { stem, extension: safeExtension } = this.splitFilename(filename, extension);
+      const { stem, extension: safeExtension } = this.splitFilename(
+        filename,
+        extension,
+      );
       const safeStem = SharedUtils.sanitizeWindowsSegment(
         stem,
         safeExtension === ".pdf" ? "箱唛" : "清关发票",
         safeExtension === ".pdf"
           ? CONFIG.BOX_LABEL_FILENAME_MAX_LENGTH
-          : CONFIG.FS_FILENAME_MAX_LENGTH - SharedUtils.charLength(safeExtension),
+          : CONFIG.FS_FILENAME_MAX_LENGTH -
+              SharedUtils.charLength(safeExtension),
       );
       return `${safeStem}${safeExtension}`;
     },
@@ -625,21 +713,32 @@
     sanitizePdfFilename(filename) {
       return this.sanitizeOutputFilename(filename, ".pdf");
     },
-    async makeUniqueFilename(directoryHandle, requestedName, extension = ".xlsx") {
+    async makeUniqueFilename(
+      directoryHandle,
+      requestedName,
+      extension = ".xlsx",
+    ) {
       const safeName = this.sanitizeOutputFilename(requestedName, extension);
-      if (!(await this.filenameExists(directoryHandle, safeName))) return safeName;
-      const { stem, extension: safeExtension } = this.splitFilename(safeName, extension);
+      if (!(await this.filenameExists(directoryHandle, safeName)))
+        return safeName;
+      const { stem, extension: safeExtension } = this.splitFilename(
+        safeName,
+        extension,
+      );
       for (let index = 2; index < 10000; index++) {
         const ending = `-${index}`;
-        const fullLengthLimit = safeExtension === ".pdf"
-          ? CONFIG.BOX_LABEL_FILENAME_MAX_LENGTH + SharedUtils.charLength(safeExtension)
-          : CONFIG.FS_FILENAME_MAX_LENGTH;
+        const fullLengthLimit =
+          safeExtension === ".pdf"
+            ? CONFIG.BOX_LABEL_FILENAME_MAX_LENGTH +
+              SharedUtils.charLength(safeExtension)
+            : CONFIG.FS_FILENAME_MAX_LENGTH;
         const room =
           fullLengthLimit -
           SharedUtils.charLength(safeExtension) -
           SharedUtils.charLength(ending);
         const candidate = `${SharedUtils.truncateChars(stem, room)}${ending}${safeExtension}`;
-        if (!(await this.filenameExists(directoryHandle, candidate))) return candidate;
+        if (!(await this.filenameExists(directoryHandle, candidate)))
+          return candidate;
       }
       throw new Error("同名文件过多，无法生成安全文件名");
     },
@@ -656,7 +755,10 @@
       window.setTimeout(() => window.URL.revokeObjectURL(url), 30000);
       return safeName;
     },
-    async saveFile(batch, { blob, filename, fbaId, extension = ".xlsx", flow }) {
+    async saveFile(
+      batch,
+      { blob, filename, fbaId, extension = ".xlsx", flow },
+    ) {
       Workflow.check(flow);
       const safeExtension = this.normalizeExtension(extension);
       if (batch.mode === "filesystem" && batch.directoryHandle) {
@@ -769,30 +871,116 @@
         return null;
       }
     },
-    async getProductDetails(globalInfo, vueInstance) {
-      if (!vueInstance?.$gateAxios) throw new Error("未找到请求客户端");
-      const items = globalInfo.inboundPlanItemVOS || [];
-      if (items.length === 0) return new Map();
-      const promises = items.map(async (item, i) => {
-        const seq = encodeURIComponent(`/api/product/info$$${i + 1}`);
-        try {
-          const res = await vueInstance.$gateAxios.get(
-            `/api/product/info?id=${item.productId}&req_time_sequence=${seq}`,
-          );
-          if (res.data.code === 1 && res.data.info)
-            return { id: item.productId, details: res.data.info };
-        } catch (e) {}
-        return { id: item.productId, details: null };
+    async getProductDetails(globalInfo, vueInstance, selectedShipments = null) {
+      if (!vueInstance?.$gateAxios) {
+        throw new Error("未找到请求客户端");
+      }
+
+      const allItems = globalInfo.inboundPlanItemVOS || [];
+
+      // 只获取所选货件涉及的 SKU
+      const selectedSkus = Array.isArray(selectedShipments)
+        ? new Set(
+            selectedShipments.flatMap((s) =>
+              (s.itemList || []).map((i) => i.sku),
+            ),
+          )
+        : null;
+
+      const filteredItems = allItems
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => !selectedSkus || selectedSkus.has(item.sku));
+
+      // 同一个 productId 只请求一次，保留原始索引
+      const uniqueItems = new Map();
+
+      filteredItems.forEach((entry) => {
+        const id = entry.item.productId;
+
+        if (id == null || id === "") return;
+
+        if (!uniqueItems.has(id)) {
+          uniqueItems.set(id, entry);
+        }
       });
-      const results = await Promise.all(promises);
+
+      const requests = Array.from(uniqueItems.values());
+
+      if (requests.length === 0) {
+        console.info("[LX发票] 没有需要获取的商品资料");
+        return new Map();
+      }
+
+      const startedAt = Date.now();
+      let successCount = 0;
+      let failedCount = 0;
+
+      console.info(
+        `[LX发票] 商品资料请求开始：计划 ${allItems.length} 项，` +
+          `筛选后 ${filteredItems.length} 项，` +
+          `实际请求 ${requests.length} 个商品`,
+      );
+
+      const results = await Promise.all(
+        requests.map(async ({ item, index }) => {
+          const seq = encodeURIComponent(`/api/product/info$$${index + 1}`);
+
+          try {
+            const res = await vueInstance.$gateAxios.get(
+              `/api/product/info?id=${item.productId}&req_time_sequence=${seq}`,
+              { timeout: 15000 },
+            );
+
+            if (res.data?.code === 1 && res.data?.info) {
+              successCount++;
+
+              return {
+                id: item.productId,
+                details: res.data.info,
+              };
+            }
+
+            failedCount++;
+
+            console.warn(
+              `[LX发票] 商品资料返回异常：productId=${item.productId}`,
+              res.data?.msg || res.data?.code,
+            );
+          } catch (error) {
+            failedCount++;
+
+            console.warn(
+              `[LX发票] 商品资料请求失败：productId=${item.productId}`,
+              error?.message || error,
+            );
+          }
+
+          // 保留原有行为：失败的商品返回空资料，不直接中断整个流程
+          return {
+            id: item.productId,
+            details: null,
+          };
+        }),
+      );
+
       const map = new Map();
-      results.forEach((r) => {
-        if (r.details) map.set(r.id, r.details);
+
+      results.forEach((result) => {
+        if (result.details) {
+          map.set(result.id, result.details);
+        }
       });
+
+      console.info(
+        `[LX发票] 商品资料请求完成：成功 ${successCount} 个，` +
+          `失败 ${failedCount} 个，总耗时 ${Date.now() - startedAt}ms`,
+      );
+
       return map;
     },
     async generateBoxLabelsFile(payload, vueInstance) {
-      if (!vueInstance?.$gateAxios?.post) throw new Error("未找到领星请求客户端");
+      if (!vueInstance?.$gateAxios?.post)
+        throw new Error("未找到领星请求客户端");
       const response = await vueInstance.$gateAxios.post(
         "/api/shipment/downloadBoxLabels",
         payload,
@@ -800,7 +988,7 @@
       );
       const body = response?.data?.code != null ? response.data : response;
       const fileId = String(body?.data?.file_id ?? "").trim();
-      if (body?.code !== 1 || !/^\d+$/.test(fileId)) {
+      if (body?.code !== 1 || !fileId) {
         throw new Error(body?.msg || "箱唛生成失败，未取得有效文件编号");
       }
       return { fileId, originalName: String(body.data.file_name || "") };
@@ -820,23 +1008,30 @@
       ) {
         blob = new Blob([data], { type: "application/pdf" });
       } else {
-        throw new Error(data?.msg || data?.message || "箱唛下载失败，返回内容不是文件");
+        throw new Error(
+          data?.msg || data?.message || "箱唛下载失败，返回内容不是文件",
+        );
       }
       const header = await blob.slice(0, 8).text();
       if (!header.startsWith("%PDF-")) {
         let serverMessage = "";
         try {
           const errorData = JSON.parse(await blob.slice(0, 4096).text());
-          serverMessage = String(errorData?.msg || errorData?.message || "").slice(0, 200);
+          serverMessage = String(
+            errorData?.msg || errorData?.message || "",
+          ).slice(0, 200);
         } catch (error) {}
-        throw new Error(serverMessage || "箱唛下载失败，服务器返回的内容不是 PDF");
+        throw new Error(
+          serverMessage || "箱唛下载失败，服务器返回的内容不是 PDF",
+        );
       }
       return blob;
     },
     async downloadBoxLabelsPdf(fileId, vueInstance) {
-      if (!vueInstance?.$gateAxios?.post) throw new Error("未找到领星请求客户端");
+      if (!vueInstance?.$gateAxios?.post)
+        throw new Error("未找到领星请求客户端");
       const id = String(fileId ?? "").trim();
-      if (!/^\d+$/.test(id)) throw new Error("箱唛文件编号无效");
+      if (!id) throw new Error("箱唛文件编号无效");
       const response = await vueInstance.$gateAxios.post(
         "/api/file/downloadById",
         { id },
@@ -851,7 +1046,12 @@
       if (!vueInstance?.$gwPost) throw new Error("未找到领星请求客户端");
       const name = String(rawName || "").trim();
       const sid = shipment.sid ?? vueInstance.info?.sid;
-      if (!shipment.inboundPlanId || !shipment.shipmentId || sid == null || !name) {
+      if (
+        !shipment.inboundPlanId ||
+        !shipment.shipmentId ||
+        sid == null ||
+        !name
+      ) {
         throw new Error("货件 ID、计划 ID、店铺 ID 或名称缺失");
       }
       if (String(shipment.shipmentName || "").trim() === name) {
@@ -865,9 +1065,7 @@
         name,
       });
       const updated =
-        res?.code === 1 &&
-        res?.data === true &&
-        res?.success !== false;
+        res?.code === 1 && res?.data === true && res?.success !== false;
       const unchanged = res?.code === -1 && res?.msg === "货件名称未修改";
       if (!updated && !unchanged) {
         throw new Error(res?.msg || "货件名称更新失败");
@@ -953,7 +1151,11 @@
       },
       resolveImageUrl(expression, scope) {
         const path = String(expression ?? "").trim();
-        if (!/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(path)) {
+        if (
+          !/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(
+            path,
+          )
+        ) {
           throw new Error("模板图片仅允许使用一个数据属性路径，不能拼接网址");
         }
         const value = this.getProperty(scope, path);
@@ -1052,7 +1254,8 @@
           const peek = () => tokens[cursor];
           const take = () => tokens[cursor++];
           const match = (value) => {
-            if (peek()?.type !== "operator" || peek()?.value !== value) return false;
+            if (peek()?.type !== "operator" || peek()?.value !== value)
+              return false;
             cursor += 1;
             return true;
           };
@@ -1061,7 +1264,9 @@
           };
           const readProperty = (value, property) => {
             if (value == null || blocked.has(property)) return undefined;
-            if (!Object.prototype.hasOwnProperty.call(Object(value), property)) {
+            if (
+              !Object.prototype.hasOwnProperty.call(Object(value), property)
+            ) {
               return undefined;
             }
             return value[property];
@@ -1347,14 +1552,17 @@
         );
         const select = document.getElementById("lx-tpl-select");
         const actions = document.getElementById("lx-tpl-actions");
-        const isCurrentModal = () => Workflow.isActive(flow) && modal.isConnected;
+        const isCurrentModal = () =>
+          Workflow.isActive(flow) && modal.isConnected;
         let callbackBusy = false;
         const setCallbackBusy = (value) => {
           callbackBusy = value;
           select.disabled = value;
           modal.querySelector("#lx-upload-btn").disabled = value;
           modal.querySelector("#lx-tpl-next").disabled = value;
-          actions.querySelectorAll("button").forEach((button) => { button.disabled = value; });
+          actions.querySelectorAll("button").forEach((button) => {
+            button.disabled = value;
+          });
         };
 
         const updateBtns = () => {
@@ -1374,9 +1582,13 @@
                   UI.notify.warning("当前没有可下载的自定义模板");
                   return;
                 }
-                this.downloadTemplateFromBase64(t.data, t.name || "自定义模板.xlsx");
+                this.downloadTemplateFromBase64(
+                  t.data,
+                  t.name || "自定义模板.xlsx",
+                );
               } catch (error) {
-                if (isCurrentModal()) UI.notify.error(error.message || "读取模板失败");
+                if (isCurrentModal())
+                  UI.notify.error(error.message || "读取模板失败");
               } finally {
                 if (modal.isConnected) setCallbackBusy(false);
               }
@@ -1398,7 +1610,8 @@
                   UI.hideModal("lx-tpl-modal");
                   resolve(this.selectTemplate({ flow }));
                 } catch (error) {
-                  if (isCurrentModal()) UI.notify.error(error.message || "删除模板失败");
+                  if (isCurrentModal())
+                    UI.notify.error(error.message || "删除模板失败");
                 } finally {
                   if (modal.isConnected) setCallbackBusy(false);
                 }
@@ -1421,11 +1634,14 @@
               setCallbackBusy(true);
               UI.showLoading(`正在校验并加载模板：${cfg.name}`, flow);
               try {
-                const result = await this.getVerifiedBuiltInTemplate(cfg, { flow });
+                const result = await this.getVerifiedBuiltInTemplate(cfg, {
+                  flow,
+                });
                 Workflow.check(flow);
                 if (!modal.isConnected) return;
                 UI.hideLoading(flow);
-                if (!result.fromCache) UI.notify.success("模板已下载并写入缓存");
+                if (!result.fromCache)
+                  UI.notify.success("模板已下载并写入缓存");
                 this.downloadTemplateFromBase64(result.base64, cfg.name);
               } catch (error) {
                 if (!Workflow.isCancelled(error) && isCurrentModal()) {
@@ -1446,23 +1662,24 @@
               if (!isCurrentModal() || callbackBusy) return;
               setCallbackBusy(true);
               try {
-              const cache =
-                (await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {})) || {};
-              if (!isCurrentModal()) return;
-              const cfg = CONFIG.BUILT_IN_TEMPLATES.find(
-                (t) => t.name === select.value,
-              );
-
-              if (cfg && cache[cfg.url]) {
-                delete cache[cfg.url];
-                await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache);
+                const cache =
+                  (await GM_getValue(CONFIG.BUILT_IN_CACHE_KEY, {})) || {};
                 if (!isCurrentModal()) return;
-                UI.notify.success("缓存已清空，下次将重新下载");
-              } else {
-                UI.notify.info("当前模板暂无缓存，无需清空");
-              }
+                const cfg = CONFIG.BUILT_IN_TEMPLATES.find(
+                  (t) => t.name === select.value,
+                );
+
+                if (cfg && cache[cfg.url]) {
+                  delete cache[cfg.url];
+                  await GM_setValue(CONFIG.BUILT_IN_CACHE_KEY, cache);
+                  if (!isCurrentModal()) return;
+                  UI.notify.success("缓存已清空，下次将重新下载");
+                } else {
+                  UI.notify.info("当前模板暂无缓存，无需清空");
+                }
               } catch (error) {
-                if (isCurrentModal()) UI.notify.error(error.message || "清除缓存失败");
+                if (isCurrentModal())
+                  UI.notify.error(error.message || "清除缓存失败");
               } finally {
                 if (modal.isConnected) setCallbackBusy(false);
               }
@@ -1474,7 +1691,9 @@
         updateBtns();
 
         document.getElementById("lx-upload-btn").onclick = () =>
-          isCurrentModal() && !callbackBusy && modal.querySelector("#lx-file-input").click();
+          isCurrentModal() &&
+          !callbackBusy &&
+          modal.querySelector("#lx-file-input").click();
         document.getElementById("lx-file-input").onchange = (e) => {
           if (!isCurrentModal() || callbackBusy) return;
           const file = e.target.files[0];
@@ -1483,23 +1702,24 @@
           const reader = new FileReader();
           reader.onload = async (ev) => {
             try {
-            if (!isCurrentModal()) return;
-            const base64 = ev.target.result.split(",")[1];
-            await GM_setValue(CONFIG.USER_TEMPLATE_KEY, {
-              name: file.name,
-              data: base64,
-            });
-            if (!isCurrentModal()) return;
-            await GM_setValue(
-              CONFIG.LAST_SELECTED_KEY,
-              CONFIG.CUSTOM_TEMPLATE_IDENTIFIER,
-            );
-            if (!isCurrentModal()) return;
-            UI.hideModal("lx-tpl-modal");
-            UI.notify.success("上传成功");
-            resolve(this.selectTemplate({ flow }));
+              if (!isCurrentModal()) return;
+              const base64 = ev.target.result.split(",")[1];
+              await GM_setValue(CONFIG.USER_TEMPLATE_KEY, {
+                name: file.name,
+                data: base64,
+              });
+              if (!isCurrentModal()) return;
+              await GM_setValue(
+                CONFIG.LAST_SELECTED_KEY,
+                CONFIG.CUSTOM_TEMPLATE_IDENTIFIER,
+              );
+              if (!isCurrentModal()) return;
+              UI.hideModal("lx-tpl-modal");
+              UI.notify.success("上传成功");
+              resolve(this.selectTemplate({ flow }));
             } catch (error) {
-              if (isCurrentModal()) UI.notify.error(error.message || "上传模板失败");
+              if (isCurrentModal())
+                UI.notify.error(error.message || "上传模板失败");
             } finally {
               if (modal.isConnected) setCallbackBusy(false);
             }
@@ -1690,56 +1910,60 @@
           if (goButton.disabled) return;
           goButton.disabled = true;
           try {
-          const newData = await GM_getValue(CONFIG.STORAGE_KEY, {});
-          Workflow.check(flow);
-          if (!modal.isConnected) return;
-          modal.querySelectorAll("tbody tr").forEach((tr) => {
-            const itm = allItems[tr.dataset.index];
-            const fields = [
-              "hscode",
-              "price",
-              "material",
-              "usage",
-              "brand",
-              "model",
-            ];
+            const newData = await GM_getValue(CONFIG.STORAGE_KEY, {});
+            Workflow.check(flow);
+            if (!modal.isConnected) return;
+            modal.querySelectorAll("tbody tr").forEach((tr) => {
+              const itm = allItems[tr.dataset.index];
+              const fields = [
+                "hscode",
+                "price",
+                "material",
+                "usage",
+                "brand",
+                "model",
+              ];
 
-            // 1. 保存输入框里的值
-            fields.forEach((f) => {
-              const val = tr.querySelector(`[data-f="${f}"]`).value.trim();
-              itm[f] = val;
-              if (!newData[itm.planItem.sku]) newData[itm.planItem.sku] = {};
-              newData[itm.planItem.sku][f] = val;
+              // 1. 保存输入框里的值
+              fields.forEach((f) => {
+                const val = tr.querySelector(`[data-f="${f}"]`).value.trim();
+                itm[f] = val;
+                if (!newData[itm.planItem.sku]) newData[itm.planItem.sku] = {};
+                newData[itm.planItem.sku][f] = val;
+              });
+
+              // 2. 【核心修复】强制将界面修改的值，同步覆盖回底层的原始属性中
+              // 防止模板中写的是 {{item.product.brand_name}} 而导致读不到手动修改的值
+              if (itm.product) {
+                itm.product.brand_name = itm.brand;
+                itm.product.model = itm.model;
+                itm.product.bg_customs_import_price = itm.price;
+                itm.product.bg_export_hs_code = itm.hscode;
+                itm.product.cg_product_material = itm.material;
+              }
+              if (itm.clearance) {
+                itm.clearance.customs_clearance_hs_code = itm.hscode;
+                itm.clearance.customs_clearance_price = itm.price;
+                itm.clearance.customs_clearance_material = itm.material;
+                itm.clearance.customs_clearance_usage = itm.usage;
+              }
+              if (itm.declaration) {
+                itm.declaration.customs_declaration_hs_code = itm.hscode;
+                itm.declaration.customs_import_price = itm.price;
+              }
             });
 
-            // 2. 【核心修复】强制将界面修改的值，同步覆盖回底层的原始属性中
-            // 防止模板中写的是 {{item.product.brand_name}} 而导致读不到手动修改的值
-            if (itm.product) {
-              itm.product.brand_name = itm.brand;
-              itm.product.model = itm.model;
-              itm.product.bg_customs_import_price = itm.price;
-              itm.product.bg_export_hs_code = itm.hscode;
-              itm.product.cg_product_material = itm.material;
-            }
-            if (itm.clearance) {
-              itm.clearance.customs_clearance_hs_code = itm.hscode;
-              itm.clearance.customs_clearance_price = itm.price;
-              itm.clearance.customs_clearance_material = itm.material;
-              itm.clearance.customs_clearance_usage = itm.usage;
-            }
-            if (itm.declaration) {
-              itm.declaration.customs_declaration_hs_code = itm.hscode;
-              itm.declaration.customs_import_price = itm.price;
-            }
-          });
-
-          await GM_setValue(CONFIG.STORAGE_KEY, newData);
-          Workflow.check(flow);
-          if (!modal.isConnected) return;
-          UI.hideModal("lx-cfm-modal");
-          resolve(allItems);
+            await GM_setValue(CONFIG.STORAGE_KEY, newData);
+            Workflow.check(flow);
+            if (!modal.isConnected) return;
+            UI.hideModal("lx-cfm-modal");
+            resolve(allItems);
           } catch (error) {
-            if (!Workflow.isCancelled(error) && Workflow.isActive(flow) && modal.isConnected) {
+            if (
+              !Workflow.isCancelled(error) &&
+              Workflow.isActive(flow) &&
+              modal.isConnected
+            ) {
               UI.notify.error(error.message || "保存资料失败");
             }
           } finally {
@@ -1764,7 +1988,11 @@
           Workflow.check(flow);
           const current = cursor++;
           const [fbaId, group] = groupedEntries[current];
-          const packData = await DataService.getPackingDetails(group.s, vueInstance, { flow });
+          const packData = await DataService.getPackingDetails(
+            group.s,
+            vueInstance,
+            { flow },
+          );
           Workflow.check(flow);
           if (
             Array.isArray(packData?.shipmentPackingVOS) &&
@@ -1818,7 +2046,9 @@
               order,
               label:
                 saved ||
-                String(item?.planItem?.productName || item?.nameCn || "").trim() ||
+                String(
+                  item?.planItem?.productName || item?.nameCn || "",
+                ).trim() ||
                 sku,
               boxesByShipment: new Map(),
             });
@@ -1854,8 +2084,12 @@
     },
 
     notifyInvoiceResults(batch, results) {
-      const savedCount = results.filter((item) => item.mode === "filesystem").length;
-      const downloadedCount = results.filter((item) => item.mode === "download").length;
+      const savedCount = results.filter(
+        (item) => item.mode === "filesystem",
+      ).length;
+      const downloadedCount = results.filter(
+        (item) => item.mode === "download",
+      ).length;
       const multiDownloadTip =
         downloadedCount > 1
           ? " 如浏览器只出现一份，请允许当前网站下载多个文件。"
@@ -1869,7 +2103,9 @@
           `已生成 ${results.length} 份：${savedCount} 份保存到自动目录，${downloadedCount} 份改用浏览器下载。${multiDownloadTip}`,
         );
       } else {
-        const reason = batch.disabledReason ? `（${batch.disabledReason}）` : "";
+        const reason = batch.disabledReason
+          ? `（${batch.disabledReason}）`
+          : "";
         UI.notify.warning(
           `已生成 ${results.length} 份发票，均改用浏览器下载${reason}。${multiDownloadTip}`,
         );
@@ -1925,7 +2161,10 @@
       }, {});
 
       const groupedEntries = Object.entries(grouped);
-      UI.showLoading(`正在获取 ${groupedEntries.length} 个货件的装箱明细...`, flow);
+      UI.showLoading(
+        `正在获取 ${groupedEntries.length} 个货件的装箱明细...`,
+        flow,
+      );
       const packingByFba = await this.prefetchPackingDetails(
         groupedEntries,
         vueInstance,
@@ -2133,7 +2372,10 @@
                 const imgM =
                   typeof v === "string" ? v.match(/^{{@(.*)}}$/) : null;
                 if (imgM) {
-                  const u = this.templateHelpers.resolveImageUrl(imgM[1], scope);
+                  const u = this.templateHelpers.resolveImageUrl(
+                    imgM[1],
+                    scope,
+                  );
                   if (u) pics.add(u);
                   rowD[cn] = u;
                 } else
@@ -2143,7 +2385,10 @@
             });
           });
 
-          UI.showLoading(`正在处理 ${fbaId} - 下载图片 (${pics.size}张)...`, flow);
+          UI.showLoading(
+            `正在处理 ${fbaId} - 下载图片 (${pics.size}张)...`,
+            flow,
+          );
           const imgBufs = new Map();
           for (const url of pics) {
             Workflow.check(flow);
@@ -2196,7 +2441,12 @@
           fbaId,
         );
         results.push(
-          await InvoiceOutputService.saveXlsx(batch, { blob, filename, fbaId, flow }),
+          await InvoiceOutputService.saveXlsx(batch, {
+            blob,
+            filename,
+            fbaId,
+            flow,
+          }),
         );
         Workflow.check(flow);
       }
@@ -2205,20 +2455,27 @@
       return { batch, results };
     },
 
-    async run(contextData, { forceBrowserDownload = false, flow = contextData.flow } = {}) {
+    async run(
+      contextData,
+      { forceBrowserDownload = false, flow = contextData.flow } = {},
+    ) {
       try {
         Workflow.check(flow);
-        const shipments = await this.selectShipment(contextData.shipmentList, { flow });
+        const shipments = await this.selectShipment(contextData.shipmentList, {
+          flow,
+        });
         Workflow.check(flow);
         if (!shipments) return;
         const tpl = await this.selectTemplate({ flow });
         Workflow.check(flow);
         if (!tpl) return;
 
-        UI.showLoading("正在获取产品报关与图片信息...", flow);
+        UI.showLoading("正在获取所选货件的商品资料...", flow);
+
         const pMap = await DataService.getProductDetails(
           contextData.globalInfo,
           contextData.vueInstance,
+          shipments,
         );
         Workflow.check(flow);
         UI.hideLoading(flow);
@@ -2256,7 +2513,9 @@
   const BoxLabelModule = {
     getShipmentSid(shipment, contextData) {
       const sid = Number(
-        shipment.sid ?? contextData.globalInfo?.sid ?? contextData.vueInstance?.info?.sid,
+        shipment.sid ??
+          contextData.globalInfo?.sid ??
+          contextData.vueInstance?.info?.sid,
       );
       if (!Number.isSafeInteger(sid) || sid <= 0) {
         throw new Error("货件缺少有效店铺 ID，不能生成箱唛");
@@ -2268,34 +2527,54 @@
         throw new Error("请至少选择一个货件");
       }
       const planItemsBySku = new Map(
-        (contextData.globalInfo?.inboundPlanItemVOS || []).map((item) => [String(item.sku || "").trim(), item]),
+        (contextData.globalInfo?.inboundPlanItemVOS || []).map((item) => [
+          String(item.sku || "").trim(),
+          item,
+        ]),
       );
       const seen = new Set();
       return shipments.map((shipment) => {
-        const fbaId = String(shipment.shipmentConfirmationId || "").trim().toUpperCase();
+        const fbaId = String(shipment.shipmentConfirmationId || "")
+          .trim()
+          .toUpperCase();
         if (!/^FBA[A-Z0-9]+$/.test(fbaId)) {
           throw new Error("货件缺少有效 FBA 确认号，不能生成箱唛");
         }
-        if (seen.has(fbaId)) throw new Error(`货件 ${fbaId} 重复，请刷新页面后重试`);
+        if (seen.has(fbaId))
+          throw new Error(`货件 ${fbaId} 重复，请刷新页面后重试`);
         seen.add(fbaId);
         if (!shipment.shipmentId || !shipment.inboundPlanId) {
           throw new Error(`货件 ${fbaId} 缺少计划 ID 或内部货件 ID`);
         }
         this.getShipmentSid(shipment, contextData);
-        return [fbaId, {
-          s: shipment,
-          items: (shipment.itemList || []).map((item) => {
-            const planItem = planItemsBySku.get(String(item.sku || "").trim());
-            return { planItem: {
-              ...planItem,
-              ...item,
-              productName: String(item.productName || "").trim() || String(planItem?.productName || "").trim(),
-            } };
-          }),
-        }];
+        return [
+          fbaId,
+          {
+            s: shipment,
+            items: (shipment.itemList || []).map((item) => {
+              const planItem = planItemsBySku.get(
+                String(item.sku || "").trim(),
+              );
+              return {
+                planItem: {
+                  ...planItem,
+                  ...item,
+                  productName:
+                    String(item.productName || "").trim() ||
+                    String(planItem?.productName || "").trim(),
+                },
+              };
+            }),
+          },
+        ];
       });
     },
-    buildRequestPayload(groupedEntries, packingByFba, contextData, sequence = Date.now()) {
+    buildRequestPayload(
+      groupedEntries,
+      packingByFba,
+      contextData,
+      sequence = Date.now(),
+    ) {
       const data = groupedEntries.map(([fbaId, group]) => {
         const rows = packingByFba.get(fbaId)?.shipmentPackingVOS;
         if (!Array.isArray(rows) || !rows.length) {
@@ -2305,7 +2584,9 @@
         rows.forEach((row) => {
           const boxId = String(row.boxId || "").trim();
           if (!boxId || !String(row.sku || "").trim()) {
-            throw new Error(`货件 ${fbaId} 的装箱明细缺少箱号或 SKU，请刷新后重试`);
+            throw new Error(
+              `货件 ${fbaId} 的装箱明细缺少箱号或 SKU，请刷新后重试`,
+            );
           }
           boxIds.add(boxId);
         });
@@ -2314,7 +2595,9 @@
         if (reported != null && String(reported).trim() !== "") {
           const reportedCount = Number(reported);
           if (!Number.isSafeInteger(reportedCount) || reportedCount !== num) {
-            throw new Error(`货件 ${fbaId} 的页面箱数与装箱明细不一致，请刷新后重试`);
+            throw new Error(
+              `货件 ${fbaId} 的页面箱数与装箱明细不一致，请刷新后重试`,
+            );
           }
         }
         return {
@@ -2337,23 +2620,34 @@
       const flow = contextData.flow;
       try {
         Workflow.check(flow);
-        const shipments = await InvoiceModule.selectShipment(contextData.shipmentList, {
-          title: "第一步：选择要下载箱唛的货件",
-          nextText: "下一步：预览箱唛下载",
-          flow,
-        });
+        const shipments = await InvoiceModule.selectShipment(
+          contextData.shipmentList,
+          {
+            title: "第一步：选择要下载箱唛的货件",
+            nextText: "下一步：预览箱唛下载",
+            flow,
+          },
+        );
         Workflow.check(flow);
         if (!shipments) return;
         const groupedEntries = this.buildGroupedEntries(shipments, contextData);
-        UI.showLoading(`正在获取 ${shipments.length} 个货件的装箱明细...`, flow);
+        UI.showLoading(
+          `正在获取 ${shipments.length} 个货件的装箱明细...`,
+          flow,
+        );
         const packingByFba = await InvoiceModule.prefetchPackingDetails(
           groupedEntries,
           contextData.vueInstance,
           { outputName: "箱唛", flow },
         );
         Workflow.check(flow);
-        const payload = this.buildRequestPayload(groupedEntries, packingByFba, contextData);
-        const shortMap = (await GM_getValue(CONFIG.SHORT_NAME_STORAGE_KEY, {})) || {};
+        const payload = this.buildRequestPayload(
+          groupedEntries,
+          packingByFba,
+          contextData,
+        );
+        const shortMap =
+          (await GM_getValue(CONFIG.SHORT_NAME_STORAGE_KEY, {})) || {};
         Workflow.check(flow);
         const { stats, totalPhysicalBoxes } = InvoiceModule.buildFolderStats(
           groupedEntries,
@@ -2368,8 +2662,14 @@
           stats,
           totalPhysicalBoxes,
           shipmentCount: shipments.length,
-          filename: InvoiceOutputService.buildBoxLabelsFilename(stats, totalPhysicalBoxes),
-          folderName: InvoiceOutputService.buildBatchFolderName(stats, totalPhysicalBoxes),
+          filename: InvoiceOutputService.buildBoxLabelsFilename(
+            stats,
+            totalPhysicalBoxes,
+          ),
+          folderName: InvoiceOutputService.buildBatchFolderName(
+            stats,
+            totalPhysicalBoxes,
+          ),
           generatedFile: null,
         });
       } catch (error) {
@@ -2380,7 +2680,11 @@
         UI.hideLoading(flow);
       }
     },
-    async downloadPrepared(prepared, contextData, { forceBrowserDownload = false } = {}) {
+    async downloadPrepared(
+      prepared,
+      contextData,
+      { forceBrowserDownload = false } = {},
+    ) {
       const flow = contextData.flow;
       Workflow.check(flow);
       if (!prepared.generatedFile) {
@@ -2413,11 +2717,15 @@
       });
       Workflow.check(flow);
       if (result.mode === "filesystem") {
-        UI.notify.success(`箱唛已保存：${batch.rootName}\\${batch.folderName}\\${result.filename}`);
+        UI.notify.success(
+          `箱唛已保存：${batch.rootName}\\${batch.folderName}\\${result.filename}`,
+        );
       } else if (forceBrowserDownload) {
         UI.notify.success(`箱唛已交给浏览器下载：${result.filename}`);
       } else {
-        UI.notify.warning(`箱唛已改用浏览器下载（${batch.disabledReason || "未授权目录"}）：${result.filename}`);
+        UI.notify.warning(
+          `箱唛已改用浏览器下载（${batch.disabledReason || "未授权目录"}）：${result.filename}`,
+        );
       }
       return { batch, result };
     },
@@ -2438,13 +2746,22 @@
         '<button id="lx-box-label-browser" class="lx-modal-btn lx-modal-btn-warning">生成并普通下载</button>',
         '<button id="lx-box-label-save" class="lx-modal-btn lx-modal-btn-success">生成并保存到发货目录</button>',
       ].join("");
-      const modal = UI.createModal("lx-box-label-preview", "第二步：确认箱唛下载", body, footer, false, { flow });
+      const modal = UI.createModal(
+        "lx-box-label-preview",
+        "第二步：确认箱唛下载",
+        body,
+        footer,
+        false,
+        { flow },
+      );
       modal.querySelector("#lx-box-label-summary").textContent =
         `已选择 ${prepared.shipmentCount} 个货件，共 ${prepared.totalPhysicalBoxes} 箱、${prepared.stats.length} 款 SKU，合并成一个 PDF。`;
       modal.querySelector("#lx-box-label-filename").value = prepared.filename;
-      modal.querySelector("#lx-box-label-folder").textContent = prepared.folderName;
+      modal.querySelector("#lx-box-label-folder").textContent =
+        prepared.folderName;
       modal.querySelector("#lx-box-label-products").value = prepared.stats
-        .map((item) => `${item.label} - ${item.boxCount}箱`).join("\n");
+        .map((item) => `${item.label} - ${item.boxCount}箱`)
+        .join("\n");
       const cancelButton = modal.querySelector("#lx-box-label-cancel");
       const browserButton = modal.querySelector("#lx-box-label-browser");
       const saveButton = modal.querySelector("#lx-box-label-save");
@@ -2461,18 +2778,23 @@
         try {
           if (!forceBrowserDownload) {
             // 目录授权必须直接由按钮点击触发，不能先等待数据请求。
-            const permissionPromise = InvoiceOutputService.prepareForInvoiceFromGesture();
+            const permissionPromise =
+              InvoiceOutputService.prepareForInvoiceFromGesture();
             const output = await permissionPromise;
             Workflow.check(flow);
             if (output.mode === "download") UI.notify.warning(output.reason);
           }
-          await this.downloadPrepared(prepared, contextData, { forceBrowserDownload });
+          await this.downloadPrepared(prepared, contextData, {
+            forceBrowserDownload,
+          });
           Workflow.check(flow);
           UI.hideModal("lx-box-label-preview");
         } catch (error) {
           if (Workflow.isCancelled(error) || !Workflow.isActive(flow)) return;
           if (error?.name === "AbortError") {
-            UI.notify.info("已取消选择目录，尚未开始生成箱唛；也可选择普通下载");
+            UI.notify.info(
+              "已取消选择目录，尚未开始生成箱唛；也可选择普通下载",
+            );
           } else {
             console.error("箱唛下载失败:", error);
             UI.notify.error("箱唛下载失败: " + error.message);
@@ -2514,9 +2836,7 @@
         ? String(shortMap[sku] || "").trim()
         : "";
       return (
-        saved ||
-        String(productLookup.get(sku)?.productName || "").trim() ||
-        sku
+        saved || String(productLookup.get(sku)?.productName || "").trim() || sku
       );
     },
 
@@ -2578,7 +2898,7 @@
           '<p style="color:#909399;font-size:13px;">确认商品简称。简称将用于货件名称和跨货件箱数汇总，并会保留已有 SKU 的历史设置。</p>',
           '<div style="max-height:50vh;overflow:auto;">',
           '<table class="lx-input-table">',
-          "<thead><tr><th width=\"60%\">SKU 信息</th><th>商品简称</th></tr></thead>",
+          '<thead><tr><th width="60%">SKU 信息</th><th>商品简称</th></tr></thead>',
           '<tbody id="lx-naming-short-body"></tbody>',
           "</table></div>",
         ].join("");
@@ -2680,11 +3000,7 @@
           (await GM_getValue(CONFIG.LOGISTICS_CHANNEL_STORAGE_KEY, "")) || "",
         ).trim();
         Workflow.check(flow);
-        const model = this.buildModel(
-          contextData,
-          packingResults,
-          shortMap,
-        );
+        const model = this.buildModel(contextData, packingResults, shortMap);
         this.renderResultModal(contextData, model, lastChannel);
       } catch (error) {
         if (Workflow.isCancelled(error) || !Workflow.isActive(flow)) return;
@@ -2695,7 +3011,11 @@
       }
     },
 
-    buildModel({ globalInfo, shipmentList, vueInstance }, packingResults, shortMap) {
+    buildModel(
+      { globalInfo, shipmentList, vueInstance },
+      packingResults,
+      shortMap,
+    ) {
       const productLookup = new Map();
       shipmentList.forEach((shipment) => {
         (shipment.itemList || []).forEach((item) => {
@@ -2706,9 +3026,7 @@
 
       const productTotals = new Map();
       const sellerName = String(globalInfo.sellerName || "未知店铺");
-      const shop = sellerName
-        .replace(/-[A-Z]{2,}(\s*-\s*\S+)?$/, "")
-        .trim();
+      const shop = sellerName.replace(/-[A-Z]{2,}(\s*-\s*\S+)?$/, "").trim();
       const creator =
         String(
           globalInfo.createByName ||
@@ -2804,8 +3122,8 @@
               !packingError &&
               Boolean(
                 shipment.inboundPlanId &&
-                  shipment.shipmentId &&
-                  (shipment.sid ?? vueInstance.info?.sid) != null,
+                shipment.shipmentId &&
+                (shipment.sid ?? vueInstance.info?.sid) != null,
               ),
             finalName: baseName,
             lastStatus: packingError ? "failed" : "idle",
@@ -2918,9 +3236,7 @@
 
       const refreshPreview = (row) => {
         const channel = this.normalizePart(row.channelInput.value);
-        row.finalName = channel
-          ? row.baseName + "-" + channel
-          : row.baseName;
+        row.finalName = channel ? row.baseName + "-" + channel : row.baseName;
         row.previewInput.value = row.finalName;
       };
 
@@ -2930,9 +3246,7 @@
         const shipmentCell = document.createElement("td");
         const fbaNode = document.createElement("strong");
         fbaNode.textContent = String(
-          row.shipment.shipmentConfirmationId ||
-            row.shipment.shipmentId ||
-            "",
+          row.shipment.shipmentConfirmationId || row.shipment.shipmentId || "",
         );
         const warehouseNode = document.createElement("div");
         warehouseNode.style.marginTop = "4px";
@@ -2969,13 +3283,7 @@
         row.statusNode.style.fontSize = "12px";
         statusCell.appendChild(row.statusNode);
 
-        tr.append(
-          shipmentCell,
-          baseCell,
-          channelCell,
-          previewCell,
-          statusCell,
-        );
+        tr.append(shipmentCell, baseCell, channelCell, previewCell, statusCell);
         resultBody.appendChild(tr);
 
         if (!row.canUpdate) {
@@ -2985,10 +3293,7 @@
           setRowStatus(row, "idle");
           row.channelInput.addEventListener("input", () => {
             refreshPreview(row);
-            if (
-              row.lastStatus === "success" ||
-              row.lastStatus === "skipped"
-            ) {
+            if (row.lastStatus === "success" || row.lastStatus === "skipped") {
               setRowStatus(row, "idle");
             }
           });
@@ -3011,9 +3316,7 @@
         if (isUpdating || !Workflow.isActive(flow)) return;
 
         const candidateRows = model.rows.filter(
-          (row) =>
-            row.canUpdate &&
-            (!retryOnly || row.lastStatus === "failed"),
+          (row) => row.canUpdate && (!retryOnly || row.lastStatus === "failed"),
         );
         const uniqueRows = new Map();
         candidateRows.forEach((row) => {
@@ -3028,9 +3331,7 @@
           );
         }
         if (!targetRows.length) {
-          UI.notify.info(
-            retryOnly ? "没有需要重试的货件" : "没有可更新的货件",
-          );
+          UI.notify.info(retryOnly ? "没有需要重试的货件" : "没有可更新的货件");
           return;
         }
 
@@ -3057,9 +3358,7 @@
             setRowStatus(
               row,
               "failed",
-              "名称 " +
-                Array.from(row.finalName).length +
-                " 字，最多 100 字",
+              "名称 " + Array.from(row.finalName).length + " 字，最多 100 字",
             ),
           );
           UI.notify.warning(
@@ -3072,9 +3371,7 @@
         }
 
         const jobs = targetRows.map((row) => {
-          row.channelInput.value = this.normalizePart(
-            row.channelInput.value,
-          );
+          row.channelInput.value = this.normalizePart(row.channelInput.value);
           refreshPreview(row);
           setRowStatus(row, "queued");
           return { row, name: row.finalName };
@@ -3122,10 +3419,7 @@
 
         try {
           await Promise.all(
-            Array.from(
-              { length: Math.min(2, jobs.length) },
-              () => worker(),
-            ),
+            Array.from({ length: Math.min(2, jobs.length) }, () => worker()),
           );
           Workflow.check(flow);
           try {
@@ -3135,9 +3429,7 @@
           }
           Workflow.check(flow);
 
-          const savedChannel = this.normalizePart(
-            globalChannelInput.value,
-          );
+          const savedChannel = this.normalizePart(globalChannelInput.value);
           if (savedChannel) {
             try {
               await GM_setValue(
@@ -3176,19 +3468,13 @@
           if (!row.canUpdate) return;
           row.channelInput.value = channel;
           refreshPreview(row);
-          if (
-            row.lastStatus === "success" ||
-            row.lastStatus === "skipped"
-          ) {
+          if (row.lastStatus === "success" || row.lastStatus === "skipped") {
             setRowStatus(row, "idle");
           }
         });
         if (channel) {
           try {
-            await GM_setValue(
-              CONFIG.LOGISTICS_CHANNEL_STORAGE_KEY,
-              channel,
-            );
+            await GM_setValue(CONFIG.LOGISTICS_CHANNEL_STORAGE_KEY, channel);
           } catch (error) {
             if (!Workflow.isActive(flow)) return;
             console.warn("物流渠道保存失败:", error);
@@ -3303,7 +3589,14 @@
             `;
       const footer = `<button id="lx-menu-cancel" class="lx-modal-btn lx-modal-btn-secondary" style="width: 100%;">关闭</button>`;
 
-      UI.createModal("lx-main-menu", "🚀 请选择 FBA 处理工具", html, footer, false, { flow, allowBack: false });
+      UI.createModal(
+        "lx-main-menu",
+        "🚀 请选择 FBA 处理工具",
+        html,
+        footer,
+        false,
+        { flow, allowBack: false },
+      );
       document.getElementById("lx-menu-cancel").onclick = () =>
         Workflow.leave("close", flow);
 
@@ -3347,13 +3640,15 @@
           UI.hideLoading(toolFlow);
           if (ctx) await module.run({ ...ctx, flow: toolFlow }, options);
         } catch (error) {
-          if (Workflow.isCancelled(error) || !Workflow.isActive(toolFlow)) return;
+          if (Workflow.isCancelled(error) || !Workflow.isActive(toolFlow))
+            return;
           UI.notify.error(error.message || "工具启动失败");
         } finally {
           UI.hideLoading(toolFlow);
         }
       };
-      const launchInvoice = (options = {}) => launchTool("invoice", InvoiceModule, options);
+      const launchInvoice = (options = {}) =>
+        launchTool("invoice", InvoiceModule, options);
 
       chooseButton.onclick = async () => {
         if (!Workflow.isActive(flow)) return;
@@ -3387,7 +3682,8 @@
           if (!Workflow.isActive(flow)) return;
           UI.notify.error(error.message || "清除目录记录失败");
         } finally {
-          if (Workflow.isActive(flow)) renderOutputStatus(await InvoiceOutputService.getStatus());
+          if (Workflow.isActive(flow))
+            renderOutputStatus(await InvoiceOutputService.getStatus());
         }
       };
 

@@ -19,7 +19,7 @@
  * 1. 先用“领星ERP-接口探针”取得真实请求样本，禁止猜接口或认证头。
  * 2. 为本功能登记独立 client / dataset / config / artifact 最小权限。
  * 3. 填完 FEATURE，增加业务层分页、完整性与字段验证，再把 setupComplete 改为 true。
- * 4. 同步修改 FEATURE.version；模板会自动向公共状态中心上报 idle/running/error。
+ * 4. 同步修改 FEATURE.version；模板的 runtime heartbeat 只用于可选桥端诊断，用户可见状态由业务插件自己的面板负责。
  * 5. 此文件已内嵌固定版本 SDK，最终插件不要依赖远程 @require。
  */
 

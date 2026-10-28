@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         领星ERP-FBA货件数据增量导出助手
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.4.2
 // @description  每日、手动或经本地数据桥任务触发抓取领星FBA货件，保存完整快照与增量数据。
 // @author       Your Assistant & User
 // @match        *://erp.lingxing.com/*
@@ -9,7 +9,6 @@
 // @noframes
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_registerMenuCommand
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
@@ -20,7 +19,7 @@
   "use strict";
 
   const CONFIG = {
-    VERSION: "1.3.0",
+    VERSION: "1.4.2",
     SCHEMA_VERSION: "lingxing-fba-shipment-export/1",
     NORMALIZER_VERSION: 1,
     API_PATH: "/api/fba_shipment/showShipment_v2",
@@ -35,6 +34,10 @@
     STATUS_KEY: "LX_FBA_DELTA_STATUS_V1",
     LAST_ACCOUNT_KEY: "LX_FBA_DELTA_LAST_ACCOUNT_V1",
     LOCK_KEY: "LX_FBA_DELTA_EXPORT_LOCK_V1",
+    SIDEBAR_ENTRY_ID: "lingxing-fba-data-bridge-sidebar-entry-v1",
+    SIDEBAR_STYLE_ID: "lingxing-local-plugin-sidebar-entry-styles-v1",
+    SIDEBAR_INITIAL_DELAY_MS: 3000,
+    SIDEBAR_WATCHDOG_MS: 2000,
     DB_NAME: "LX_FBA_DELTA_EXPORT_DB_V1",
     DB_STORE: "kv",
     LOCK_TTL_MS: 15 * 60 * 1000,
@@ -60,8 +63,6 @@
     BRIDGE_JOB_LEADER_HEARTBEAT_MS: 20 * 1000,
     BRIDGE_JOB_IDLE_RETRY_MS: 3000,
     BRIDGE_JOB_ERROR_RETRY_MAX_MS: 60 * 1000,
-    BRIDGE_RUNTIME_HEARTBEAT_MS: 20 * 1000,
-    BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT_MS: 5000,
   };
 
   const META_ONLY_KEYS = new Set([
@@ -85,8 +86,9 @@
     running: false,
     nextAutoAttemptAt: 0,
     scheduler: null,
+    uiWatchdog: null,
+    uiStartTimer: null,
     initialized: false,
-    menuRegistered: false,
     jobWorkerStarted: false,
     jobWorkerStopped: false,
     jobWorkerId: "",
@@ -94,12 +96,6 @@
     jobWorkerLeader: false,
     jobWorkerLeaderHeartbeat: null,
     activeBridgeJobId: "",
-    runtimeHeartbeatTimer: null,
-    runtimeHeartbeatInFlight: false,
-    runtimeHeartbeatPending: false,
-    runtimeHeartbeatLastWarningAt: 0,
-    runtimeHeartbeatState: "idle",
-    runtimeHeartbeatMessage: "已加载，等待任务",
   };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const pad2 = (value) => String(value).padStart(2, "0");
@@ -348,78 +344,6 @@
       token = await getBridgeToken({ forcePair: true });
       return request();
     }
-  }
-
-  function runtimeHeartbeatPayload() {
-    const payload = {
-      instance_id: `fba-${runtime.jobWorkerTabId}`,
-      version: CONFIG.VERSION,
-      state: runtime.runtimeHeartbeatState,
-    };
-    const message = String(runtime.runtimeHeartbeatMessage || "")
-      .replace(/[\x00-\x1f\x7f]+/g, " ")
-      .trim()
-      .slice(0, 300);
-    if (message) payload.message = message;
-    return payload;
-  }
-
-  async function sendRuntimeHeartbeat() {
-    if (runtime.jobWorkerStopped) return;
-    if (runtime.runtimeHeartbeatInFlight) {
-      runtime.runtimeHeartbeatPending = true;
-      return;
-    }
-    runtime.runtimeHeartbeatInFlight = true;
-    try {
-      await authorizedBridgeRequest("POST", "/v2/runtime/heartbeat", {
-        body: runtimeHeartbeatPayload(),
-        timeout: CONFIG.BRIDGE_RUNTIME_HEARTBEAT_TIMEOUT_MS,
-      });
-      runtime.runtimeHeartbeatLastWarningAt = 0;
-    } catch (error) {
-      const now = Date.now();
-      if (now - runtime.runtimeHeartbeatLastWarningAt >= 60 * 1000) {
-        runtime.runtimeHeartbeatLastWarningAt = now;
-        console.warn("[领星FBA增量导出] 无法上报运行状态，将自动重试", error);
-      }
-    } finally {
-      runtime.runtimeHeartbeatInFlight = false;
-      if (runtime.runtimeHeartbeatPending && !runtime.jobWorkerStopped) {
-        runtime.runtimeHeartbeatPending = false;
-        void sendRuntimeHeartbeat();
-      }
-    }
-  }
-
-  function requestRuntimeHeartbeat() {
-    Promise.resolve(sendRuntimeHeartbeat()).catch((error) => {
-      console.warn("[领星FBA增量导出] 运行状态上报异常", error);
-    });
-  }
-
-  function setRuntimeHeartbeatState(state, message = "") {
-    if (!["idle", "running", "error"].includes(state)) return;
-    runtime.runtimeHeartbeatState = state;
-    runtime.runtimeHeartbeatMessage = String(message || "");
-    requestRuntimeHeartbeat();
-  }
-
-  function startRuntimeHeartbeat() {
-    if (runtime.runtimeHeartbeatTimer) return;
-    requestRuntimeHeartbeat();
-    runtime.runtimeHeartbeatTimer = setInterval(
-      requestRuntimeHeartbeat,
-      CONFIG.BRIDGE_RUNTIME_HEARTBEAT_MS,
-    );
-    window.addEventListener(
-      "beforeunload",
-      () => {
-        if (runtime.runtimeHeartbeatTimer) clearInterval(runtime.runtimeHeartbeatTimer);
-        runtime.runtimeHeartbeatTimer = null;
-      },
-      { once: true },
-    );
   }
 
   function validateBridgeAck(ack, expected) {
@@ -1513,6 +1437,169 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function addSidebarEntryStyles() {
+    if (document.getElementById(CONFIG.SIDEBAR_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = CONFIG.SIDEBAR_STYLE_ID;
+    style.textContent = `
+      .lx-local-plugin-sidebar-entry{cursor:pointer!important}
+      .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{display:flex!important;align-items:center!important;width:100%!important;height:100%!important;color:inherit!important;text-decoration:none!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 24px!important;width:24px!important;margin-right:8px!important;font:700 17px/1 system-ui,"Microsoft YaHei",sans-serif!important;font-style:normal!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      .lx-local-plugin-sidebar-entry.is-active{color:#409eff!important;background:#ecf5ff!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry,.el-menu--collapse>.lx-local-plugin-sidebar-entry{padding-left:0!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control,.el-menu--collapse>.lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{justify-content:center!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{display:none!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{margin-right:0!important}
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function copyScopedAttributes(source, target) {
+    if (!source) return;
+    for (const attribute of source.attributes || []) {
+      if (attribute.name.startsWith("data-v-")) target.setAttribute(attribute.name, attribute.value);
+    }
+  }
+
+  function findSidebarMenu() {
+    const direct = document.querySelector('.sideBar-container > ul.el-menu[role="menubar"]');
+    if (direct) return direct;
+    return [...document.querySelectorAll('ul.el-menu[role="menubar"]')]
+      .find((menu) => menu.closest(".sideBar-container, .sideBar")) || null;
+  }
+
+  function isPanelOpen() {
+    return Boolean(document.getElementById("lxde-overlay"));
+  }
+
+  function updateSidebarEntryState() {
+    const entry = document.getElementById(CONFIG.SIDEBAR_ENTRY_ID);
+    if (!entry) return;
+    const open = isPanelOpen();
+    entry.classList.toggle("is-active", open);
+    entry.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function closePanel() {
+    document.getElementById("lxde-overlay")?.remove();
+    updateSidebarEntryState();
+  }
+
+  function togglePanel() {
+    if (isPanelOpen()) closePanel();
+    else void openPanel();
+  }
+
+  function getNativeSidebarItems(menu) {
+    return [...menu.children].filter((child) => (
+      child.matches?.("li.el-menu-item")
+      && !child.classList.contains("lx-local-plugin-sidebar-entry")
+    ));
+  }
+
+  function findSettingsSidebarItem(menu) {
+    return [...getNativeSidebarItems(menu)].reverse()
+      .find((item) => item.querySelector("i.lx_nav_set") || item.textContent.trim() === "设置") || null;
+  }
+
+  function normalizeSidebarPluginEntries(menu) {
+    const pluginEntries = [...menu.children].filter((child) => (
+      child.matches?.("li.lx-local-plugin-sidebar-entry") && child.dataset?.lxToolEntry
+    ));
+    if (!pluginEntries.length) return;
+    const readOrder = (entry) => {
+      const order = Number(entry.dataset.lxToolOrder);
+      return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+    };
+    const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+    pluginEntries.sort((left, right) => (
+      readOrder(left) - readOrder(right)
+      || compareText(left.dataset.lxToolEntry || "", right.dataset.lxToolEntry || "")
+      || compareText(left.id || "", right.id || "")
+    ));
+    const currentTail = [...menu.children].slice(-pluginEntries.length);
+    if (currentTail.every((entry, index) => entry === pluginEntries[index])) return;
+    pluginEntries.forEach((entry) => menu.appendChild(entry));
+  }
+
+  function positionSidebarEntry(menu) {
+    normalizeSidebarPluginEntries(menu);
+  }
+
+  function createSidebarEntry(menu) {
+    const nativeItems = getNativeSidebarItems(menu);
+    if (!nativeItems.length) return null;
+    const settingsItem = findSettingsSidebarItem(menu);
+    const referenceItem = settingsItem || nativeItems[nativeItems.length - 1] || null;
+    const referenceControl = referenceItem?.querySelector(":scope > a");
+    const referenceIcon = referenceControl?.querySelector("i");
+    const referenceLabel = referenceControl?.querySelector("span");
+
+    const entry = document.createElement("li");
+    copyScopedAttributes(referenceItem, entry);
+    entry.id = CONFIG.SIDEBAR_ENTRY_ID;
+    entry.className = "el-menu-item lx-local-plugin-sidebar-entry";
+    entry.style.paddingLeft = referenceItem?.style?.paddingLeft || "20px";
+    entry.dataset.lxToolEntry = "fba-data-bridge";
+    entry.dataset.lxToolOrder = "200";
+    entry.setAttribute("role", "menuitem");
+    entry.setAttribute("tabindex", "0");
+    entry.setAttribute("aria-haspopup", "dialog");
+    entry.setAttribute("aria-controls", "lxde-overlay");
+    entry.setAttribute("aria-expanded", "false");
+    entry.setAttribute("aria-label", "显示或隐藏 FBA 数据桥面板");
+    entry.title = "FBA 数据桥";
+
+    const control = document.createElement("a");
+    copyScopedAttributes(referenceControl, control);
+    control.className = "lx-local-plugin-sidebar-control";
+    control.setAttribute("tabindex", "-1");
+    control.setAttribute("aria-hidden", "true");
+
+    const icon = document.createElement("i");
+    copyScopedAttributes(referenceIcon, icon);
+    icon.className = "lx-local-plugin-sidebar-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "↻";
+
+    const label = document.createElement("span");
+    copyScopedAttributes(referenceLabel, label);
+    label.className = "lx-local-plugin-sidebar-label";
+    label.textContent = "FBA";
+    control.append(icon, label);
+    entry.appendChild(control);
+
+    const activate = (event) => {
+      if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePanel();
+    };
+    entry.addEventListener("click", activate);
+    entry.addEventListener("keydown", activate);
+
+    menu.appendChild(entry);
+    positionSidebarEntry(menu);
+    updateSidebarEntryState();
+    return entry;
+  }
+
+  function ensureSidebarEntry() {
+    addSidebarEntryStyles();
+    const menu = findSidebarMenu();
+    if (!menu) return;
+    if (!findSettingsSidebarItem(menu)) return;
+    const existing = document.getElementById(CONFIG.SIDEBAR_ENTRY_ID);
+    if (existing?.parentElement === menu) {
+      positionSidebarEntry(menu);
+      updateSidebarEntryState();
+      return;
+    }
+    existing?.remove();
+    createSidebarEntry(menu);
+  }
+
   function toast(message, type = "info", duration = 4200) {
     document.querySelectorAll(".lxde-toast").forEach((element) => element.remove());
     const element = document.createElement("div");
@@ -1545,7 +1632,6 @@
       return true;
     } catch (error) {
       const message = error?.message || String(error);
-      setRuntimeHeartbeatState("error", `无法启动 FBA 数据同步：${message}`);
       await saveStatus({
         bridgeAvailable: false,
         lastBridgeHealthAt: new Date().toISOString(),
@@ -1608,7 +1694,7 @@
   }
 
   async function openPanel() {
-    document.getElementById("lxde-overlay")?.remove();
+    closePanel();
     const settings = await getSettings();
     const overlay = document.createElement("div");
     overlay.id = "lxde-overlay";
@@ -1649,11 +1735,11 @@
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    updateSidebarEntryState();
 
-    const close = () => overlay.remove();
-    document.getElementById("lxde-close").onclick = close;
+    document.getElementById("lxde-close").onclick = closePanel;
     overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) close();
+      if (event.target === overlay) closePanel();
     });
 
     document.getElementById("lxde-save-settings").onclick = async () => {
@@ -1734,14 +1820,6 @@
     }
 
     runtime.running = true;
-    setRuntimeHeartbeatState(
-      "running",
-      trigger === "bridge_job"
-        ? "正在执行 AI 发起的 FBA 货件刷新"
-        : trigger === "scheduled"
-          ? "正在执行定时 FBA 货件同步"
-          : "正在执行手动 FBA 货件同步",
-    );
     setRunButtonsDisabled(true);
     const startedAt = new Date().toISOString();
     const startedMs = Date.now();
@@ -1817,9 +1895,6 @@
         // 已成功落盘的数据反向标成失败。
         console.warn("[领星FBA增量导出] 数据已同步，但面板信息刷新失败", error);
       }
-      if (trigger !== "bridge_job") {
-        setRuntimeHeartbeatState("idle", "最近一次 FBA 货件同步已完成");
-      }
       return {
         run_id: output.run_id,
         account_key: output.account_key,
@@ -1836,7 +1911,6 @@
       console.error("[领星FBA增量导出] 运行失败", error);
       runtime.nextAutoAttemptAt = Date.now() + CONFIG.AUTO_RETRY_MS;
       const message = error?.message || String(error);
-      setRuntimeHeartbeatState("error", `FBA 数据同步失败：${message}`);
       const isBridgeFailure = error?.code === "BRIDGE_DELIVERY_FAILED";
       const statusPatch = {
         state: isBridgeFailure ? "bridge_error" : "error",
@@ -1861,7 +1935,6 @@
       return false;
     } finally {
       runtime.running = false;
-      requestRuntimeHeartbeat();
       setRunButtonsDisabled(false);
       releaseRunLock(lockToken);
     }
@@ -2065,10 +2138,8 @@
 
   async function handleClaimedBridgeJob(job, workerId) {
     runtime.activeBridgeJobId = job.id;
-    setRuntimeHeartbeatState("running", "正在执行 AI 发起的 FBA 货件刷新");
     const reporter = createBridgeJobProgressReporter(job, workerId);
     const heartbeat = setInterval(() => reporter.heartbeat(), 20 * 1000);
-    let terminalPresence = null;
     try {
       let result;
       try {
@@ -2107,10 +2178,6 @@
       } catch (error) {
         clearInterval(heartbeat);
         const serialized = serializeBridgeJobError(error);
-        terminalPresence = {
-          state: "error",
-          message: `AI 发起的 FBA 货件刷新失败：${serialized.message}`,
-        };
         await reporter.flush();
         try {
           await completeBridgeJob(job, "failed", { error: serialized });
@@ -2134,26 +2201,9 @@
         },
       });
       console.info("[领星FBA增量导出] AI 触发任务已完成", job.id, result.run_id);
-      terminalPresence = {
-        state: "idle",
-        message: "最近一次 AI 发起的 FBA 货件刷新已完成",
-      };
-    } catch (error) {
-      if (!terminalPresence) {
-        terminalPresence = {
-          state: "error",
-          message: `FBA 任务状态回报失败：${error?.message || String(error)}`,
-        };
-      }
-      throw error;
     } finally {
       clearInterval(heartbeat);
       if (runtime.activeBridgeJobId === job.id) runtime.activeBridgeJobId = "";
-      if (terminalPresence) {
-        setRuntimeHeartbeatState(terminalPresence.state, terminalPresence.message);
-      } else {
-        requestRuntimeHeartbeat();
-      }
     }
   }
 
@@ -2352,10 +2402,23 @@
   function ensureUi() {
     try {
       addStyles();
-      document.getElementById("lxde-float")?.remove();
     } catch (error) {
       console.error("[领星FBA增量导出] 注入样式失败", error);
     }
+    try {
+      ensureSidebarEntry();
+    } catch (error) {
+      console.error("[领星FBA增量导出] 挂载左侧导航入口失败", error);
+    }
+  }
+
+  function startUiWatchdog() {
+    if (runtime.uiStartTimer || runtime.uiWatchdog) return;
+    runtime.uiStartTimer = setTimeout(() => {
+      runtime.uiStartTimer = null;
+      ensureUi();
+      runtime.uiWatchdog = setInterval(ensureUi, CONFIG.SIDEBAR_WATCHDOG_MS);
+    }, CONFIG.SIDEBAR_INITIAL_DELAY_MS);
   }
 
   function startScheduler() {
@@ -2369,30 +2432,14 @@
     });
   }
 
-  function registerMenuCommands() {
-    if (runtime.menuRegistered || typeof GM_registerMenuCommand !== "function") return;
-    try {
-      GM_registerMenuCommand("领星 FBA 数据桥：显示面板", openPanel);
-      runtime.menuRegistered = true;
-    } catch (error) {
-      console.error("[领星FBA增量导出] 注册油猴菜单失败", error);
-    }
-  }
-
   function init() {
-    ensureUi();
-    registerMenuCommands();
     if (runtime.initialized) return;
     runtime.initialized = true;
+    startUiWatchdog();
     try {
       startScheduler();
     } catch (error) {
       console.error("[领星FBA增量导出] 启动每日调度失败，但手动入口仍可使用", error);
-    }
-    try {
-      startRuntimeHeartbeat();
-    } catch (error) {
-      console.error("[领星FBA增量导出] 启动运行状态上报失败，但数据同步仍可使用", error);
     }
     try {
       startBridgeJobWorker();
@@ -2402,7 +2449,6 @@
     console.info("[领星FBA增量导出] 已加载", CONFIG.VERSION, localDay());
   }
 
-  registerMenuCommands();
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
     setTimeout(init, 1000);

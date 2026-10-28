@@ -1,15 +1,14 @@
 // ==UserScript==
 // @name         领星ERP-接口探针
 // @namespace    local.lingxing.toolkit
-// @version      1.1.0
-// @description  统一显示领星自动化功能运行状态，并在手动开启时提供脱敏接口探针。
+// @version      1.3.3
+// @description  手动记录并脱敏保存领星页面接口请求，默认不显示、不记录。
 // @match        https://erp.lingxing.com/*
 // @run-at       document-start
 // @noframes
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
 // @connect      127.0.0.1
 // ==/UserScript==
@@ -29,7 +28,10 @@
   const MAX_RESPONSE_TEXT = 2 * 1024 * 1024;
   const MAX_STRING = 1200;
   const HOST_ID = 'lingxing-request-probe-host-v1';
-  const RUNTIME_REFRESH_MS = 20 * 1000;
+  const SIDEBAR_ENTRY_ID = 'lingxing-request-probe-sidebar-entry-v1';
+  const SIDEBAR_STYLE_ID = 'lingxing-local-plugin-sidebar-entry-styles-v1';
+  const SIDEBAR_INITIAL_DELAY_MS = 3000;
+  const SIDEBAR_WATCHDOG_MS = 2000;
   const SECRET_KEY = /(authorization|auth[-_]?token|access[-_]?token|refresh[-_]?token|cookie|password|passwd|secret|signature|credential|session[-_]?id|csrf|xsrf)/i;
   const PRIVATE_KEY = /(^|[-_])(phone|mobile|email|address|contact|buyer|customer|receiver|recipient|consignee|id[-_]?card|identity)([-_]|$)/i;
   const SAFE_HEADER_VALUE = /^(accept|content-type)$/i;
@@ -56,17 +58,8 @@
     sequence: 0,
     hookErrors: [],
     networkHooksInstalled: false,
-    runtime: {
-      bridge: 'checking',
-      detailAccess: 'checking',
-      summary: { online_clients: 0, online_instances: 0, running: 0, error: 0 },
-      logicalClients: [],
-      generatedAt: null,
-      lastCheckedAt: null,
-      errorMessage: '',
-      refreshInFlight: false,
-      refreshTimer: null,
-    },
+    sidebarWatchdog: null,
+    sidebarStartTimer: null,
   };
 
   function nowIso() {
@@ -815,6 +808,12 @@
     scheduleRender();
   }
 
+  function setAllEntriesSelected(selected) {
+    const nextSelected = Boolean(selected);
+    for (const entry of state.entries) entry.selected = nextSelected;
+    scheduleRender();
+  }
+
   function selectedEntries() {
     return state.entries.filter((entry) => entry.selected).map((entry) => {
       const copy = { ...entry };
@@ -878,7 +877,6 @@
     setStatus('正在配对…');
     const result = await createBridge().pair(code.trim());
     setStatus(`配对成功（${result.permissions.length} 项权限）`, 'ok');
-    await refreshRuntimeStatus();
   }
 
   async function saveToBridge() {
@@ -923,113 +921,6 @@
     setStatus('样本已交给浏览器下载', 'ok');
   }
 
-  function nonNegativeInteger(value) {
-    const number = Number(value);
-    return Number.isSafeInteger(number) && number >= 0 ? number : 0;
-  }
-
-  function normalizeRuntimeSummary(value) {
-    const summary = isObject(value?.summary) ? value.summary : (isObject(value) ? value : {});
-    return {
-      online_clients: nonNegativeInteger(summary.online_clients),
-      online_instances: nonNegativeInteger(summary.online_instances),
-      running: nonNegativeInteger(summary.running),
-      error: nonNegativeInteger(summary.error),
-    };
-  }
-
-  function compactRuntimeText() {
-    const runtime = state.runtime;
-    if (runtime.bridge === 'checking') return '◌ 正在检查';
-    if (runtime.bridge === 'offline') return '● 本地桥离线';
-    const { online_clients: online, running, error } = runtime.summary;
-    if (error > 0) return `● ${online} 在线 · ${error} 异常`;
-    if (running > 0) return `● ${online} 在线 · ${running} 运行`;
-    return `● ${online} 在线 · 空闲`;
-  }
-
-  function runtimeTone() {
-    if (state.runtime.bridge === 'checking') return 'checking';
-    if (state.runtime.bridge === 'offline') return 'offline';
-    if (state.runtime.summary.error > 0) return 'error';
-    if (state.runtime.summary.running > 0) return 'running';
-    return 'online';
-  }
-
-  function runtimeDetailHint() {
-    const runtime = state.runtime;
-    if (runtime.bridge === 'offline') return runtime.errorMessage || '请确认 Windows 本地桥服务已启动。';
-    if (runtime.detailAccess === 'pairing_required') return '本地桥已在线。当前中心尚未配对，只能显示匿名汇总；配对后可查看每个功能明细。';
-    if (runtime.detailAccess === 'permission_denied') return '本地桥已在线，但当前客户端缺少 runtime:read 权限；更新桥配置后请重新配对。';
-    if (runtime.detailAccess === 'unsupported') return '本地桥已在线，但当前版本还不支持运行状态明细。';
-    if (runtime.detailAccess === 'error') return `本地桥已在线，读取明细失败：${runtime.errorMessage || '未知错误'}`;
-    if (runtime.detailAccess === 'checking') return '正在读取运行状态…';
-    if (runtime.logicalClients.length === 0) return '本地桥已在线，当前没有已登记的浏览器功能。';
-    return '';
-  }
-
-  function formatRuntimeTime(value) {
-    if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleTimeString('zh-CN', { hour12: false });
-  }
-
-  async function refreshRuntimeStatus() {
-    const runtime = state.runtime;
-    if (runtime.refreshInFlight) return;
-    runtime.refreshInFlight = true;
-    if (runtime.bridge !== 'online') runtime.bridge = 'checking';
-    runtime.detailAccess = 'checking';
-    scheduleRender();
-    try {
-      const bridge = createBridge();
-      const health = await bridge.health();
-      runtime.bridge = 'online';
-      runtime.summary = normalizeRuntimeSummary(health.runtime_summary);
-      runtime.errorMessage = '';
-      if (typeof bridge.runtimeStatus !== 'function') {
-        runtime.detailAccess = 'unsupported';
-        runtime.logicalClients = [];
-      } else {
-        try {
-          const result = await bridge.runtimeStatus();
-          const snapshot = result?.runtime;
-          if (!isObject(snapshot) || !Array.isArray(snapshot.logical_clients)) {
-            throw new Error('运行状态响应缺少 runtime.logical_clients');
-          }
-          runtime.summary = normalizeRuntimeSummary(snapshot.summary);
-          runtime.logicalClients = snapshot.logical_clients.filter(isObject);
-          runtime.generatedAt = typeof snapshot.generated_at === 'string' ? snapshot.generated_at : null;
-          runtime.detailAccess = 'ready';
-        } catch (error) {
-          runtime.logicalClients = [];
-          runtime.errorMessage = error?.message || String(error);
-          if (error?.requiresPairing || error?.code === 'PAIRING_REQUIRED') {
-            runtime.detailAccess = 'pairing_required';
-          } else if (error?.status === 403 || error?.code === 'PERMISSION_DENIED') {
-            runtime.detailAccess = 'permission_denied';
-          } else if (error?.status === 404 || error?.code === 'NOT_FOUND') {
-            runtime.detailAccess = 'unsupported';
-          } else {
-            runtime.detailAccess = 'error';
-          }
-        }
-      }
-    } catch (error) {
-      runtime.bridge = 'offline';
-      runtime.detailAccess = 'unavailable';
-      runtime.summary = normalizeRuntimeSummary(null);
-      runtime.logicalClients = [];
-      runtime.generatedAt = null;
-      runtime.errorMessage = error?.message || String(error);
-    } finally {
-      runtime.lastCheckedAt = nowIso();
-      runtime.refreshInFlight = false;
-      scheduleRender();
-    }
-  }
-
   function setStatus(message, kind = '') {
     if (!state.ui?.status) return;
     state.ui.status.textContent = message;
@@ -1054,79 +945,18 @@
     }
   }
 
-  function renderRuntime() {
-    if (!state.ui) return;
-    const runtime = state.runtime;
-    const summary = runtime.summary;
-    const tone = runtimeTone();
-    state.ui.compact.textContent = compactRuntimeText();
-    state.ui.compact.dataset.tone = tone;
-    state.ui.bridgeState.textContent = runtime.bridge === 'online'
-      ? '在线'
-      : (runtime.bridge === 'checking' ? '检查中' : '离线');
-    state.ui.bridgeState.dataset.tone = tone;
-    state.ui.onlineClients.textContent = String(summary.online_clients);
-    state.ui.onlineInstances.textContent = String(summary.online_instances);
-    state.ui.runningCount.textContent = String(summary.running);
-    state.ui.errorCount.textContent = String(summary.error);
-    state.ui.runtimeUpdated.textContent = runtime.lastCheckedAt
-      ? `最后检查 ${formatRuntimeTime(runtime.lastCheckedAt)}`
-      : '等待首次检查';
-    const hint = runtimeDetailHint();
-    state.ui.runtimeHint.textContent = hint;
-    state.ui.runtimeHint.hidden = !hint;
-
-    const fragment = pageDocument.createDocumentFragment();
-    for (const client of runtime.logicalClients) {
-      const row = pageDocument.createElement('div');
-      row.className = 'runtime-client';
-      row.dataset.state = client.online === false ? 'offline' : String(client.state || 'idle');
-      const main = pageDocument.createElement('div');
-      main.className = 'runtime-client-main';
-      const name = pageDocument.createElement('strong');
-      name.textContent = String(client.name || client.client_id || '未命名功能');
-      const badge = pageDocument.createElement('span');
-      badge.className = 'runtime-badge';
-      const clientState = client.online === false ? 'offline' : String(client.state || 'idle');
-      badge.dataset.state = clientState;
-      badge.textContent = {
-        idle: '空闲',
-        running: '运行中',
-        error: '异常',
-        offline: '未激活',
-      }[clientState] || clientState;
-      main.append(name, badge);
-      const meta = pageDocument.createElement('div');
-      meta.className = 'runtime-client-meta';
-      const instances = Array.isArray(client.instances) ? client.instances.length : 0;
-      const capabilities = Array.isArray(client.capabilities)
-        ? client.capabilities.map((item) => String(item?.name || item?.id || '')).filter(Boolean)
-        : [];
-      meta.textContent = `${instances} 个页面实例 · 最后心跳 ${formatRuntimeTime(client.last_seen_at)}`;
-      const capabilityText = pageDocument.createElement('div');
-      capabilityText.className = 'runtime-capabilities';
-      capabilityText.textContent = capabilities.length ? capabilities.join('、') : '未声明功能';
-      const instancesForMessage = Array.isArray(client.instances) ? client.instances : [];
-      const activeInstance = instancesForMessage.find((item) => item?.state === clientState && item?.message)
-        || instancesForMessage.find((item) => item?.message);
-      const message = pageDocument.createElement('div');
-      message.className = 'runtime-message';
-      message.textContent = activeInstance?.message ? String(activeInstance.message) : '';
-      message.hidden = !message.textContent;
-      row.append(main, meta, capabilityText, message);
-      fragment.appendChild(row);
-    }
-    state.ui.runtimeList.replaceChildren(fragment);
-  }
-
   function render() {
     if (!state.ui) return;
-    renderRuntime();
     state.ui.mode.textContent = state.recording ? '● 正在记录' : '○ 已停止';
     state.ui.mode.dataset.recording = state.recording ? 'true' : 'false';
     state.ui.start.disabled = state.recording;
     state.ui.stop.disabled = !state.recording;
-    state.ui.count.textContent = `${state.entries.length} 条（已选 ${state.entries.filter((item) => item.selected).length}）`;
+    const selectedCount = state.entries.filter((item) => item.selected).length;
+    const allSelected = state.entries.length > 0 && selectedCount === state.entries.length;
+    state.ui.count.textContent = `${state.entries.length} 条（已选 ${selectedCount}）`;
+    state.ui.selectAll.checked = allSelected;
+    state.ui.selectAll.indeterminate = selectedCount > 0 && !allSelected;
+    state.ui.selectAll.disabled = state.entries.length === 0;
     const fragment = pageDocument.createDocumentFragment();
     const visible = state.entries.slice().reverse();
     for (const entry of visible) {
@@ -1174,37 +1004,223 @@
     });
   }
 
+  function fitPositionToViewport(position, width, height, viewportWidth = pageWindow.innerWidth, viewportHeight = pageWindow.innerHeight) {
+    return {
+      left: Math.max(0, Math.min(Math.max(0, viewportWidth - width), Number(position?.left) || 0)),
+      top: Math.max(0, Math.min(Math.max(0, viewportHeight - height), Number(position?.top) || 0)),
+    };
+  }
+
   function installDrag(handle, host) {
     let start = null;
-    handle.addEventListener('pointerdown', (event) => {
-      if (event.target?.closest?.('button,input,summary')) return;
-      const rect = host.getBoundingClientRect();
-      start = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
-      handle.setPointerCapture(event.pointerId);
-    });
-    handle.addEventListener('pointermove', (event) => {
-      if (!start) return;
-      host.style.left = `${Math.max(0, Math.min(pageWindow.innerWidth - 80, start.left + event.clientX - start.x))}px`;
-      host.style.top = `${Math.max(0, Math.min(pageWindow.innerHeight - 42, start.top + event.clientY - start.y))}px`;
-      host.style.right = 'auto';
-      host.style.bottom = 'auto';
-    });
-    handle.addEventListener('pointerup', (event) => {
+    const finishDrag = (event) => {
       if (!start) return;
       start = null;
       try { handle.releasePointerCapture(event.pointerId); } catch { /* noop */ }
       const rect = host.getBoundingClientRect();
-      const top = Math.max(8, Math.min(pageWindow.innerHeight - Math.min(rect.height, 60) - 8, rect.top));
-      host.style.top = `${top}px`;
-      host.style.bottom = 'auto';
-      if (rect.left + rect.width / 2 < pageWindow.innerWidth / 2) {
-        host.style.left = '12px';
-        host.style.right = 'auto';
-      } else {
-        host.style.left = 'auto';
-        host.style.right = '12px';
-      }
+      const fitted = fitPositionToViewport(rect, rect.width, rect.height);
+      host.style.left = `${fitted.left}px`;
+      host.style.top = `${fitted.top}px`;
+    };
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.target?.closest?.('button,input')) return;
+      const rect = host.getBoundingClientRect();
+      start = {
+        x: event.clientX,
+        y: event.clientY,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+      handle.setPointerCapture(event.pointerId);
     });
+    handle.addEventListener('pointermove', (event) => {
+      if (!start) return;
+      host.style.left = `${Math.max(0, Math.min(pageWindow.innerWidth - start.width, start.left + event.clientX - start.x))}px`;
+      host.style.top = `${Math.max(0, Math.min(pageWindow.innerHeight - start.height, start.top + event.clientY - start.y))}px`;
+      host.style.right = 'auto';
+      host.style.bottom = 'auto';
+    });
+    handle.addEventListener('pointerup', finishDrag);
+    handle.addEventListener('pointercancel', finishDrag);
+  }
+
+  function addSidebarEntryStyles() {
+    if (pageDocument.getElementById(SIDEBAR_STYLE_ID)) return;
+    const style = pageDocument.createElement('style');
+    style.id = SIDEBAR_STYLE_ID;
+    style.textContent = `
+      .lx-local-plugin-sidebar-entry{cursor:pointer!important}
+      .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{display:flex!important;align-items:center!important;width:100%!important;height:100%!important;color:inherit!important;text-decoration:none!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 24px!important;width:24px!important;margin-right:8px!important;font:700 17px/1 system-ui,"Microsoft YaHei",sans-serif!important;font-style:normal!important}
+      .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      .lx-local-plugin-sidebar-entry.is-active{color:#409eff!important;background:#ecf5ff!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry,.el-menu--collapse>.lx-local-plugin-sidebar-entry{padding-left:0!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control,.el-menu--collapse>.lx-local-plugin-sidebar-entry>.lx-local-plugin-sidebar-control{justify-content:center!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-label{display:none!important}
+      .sideBar.collapse-sidebar .lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon,.el-menu--collapse>.lx-local-plugin-sidebar-entry .lx-local-plugin-sidebar-icon{margin-right:0!important}
+    `;
+    (pageDocument.head || pageDocument.documentElement).appendChild(style);
+  }
+
+  function copyScopedAttributes(source, target) {
+    if (!source) return;
+    for (const attribute of source.attributes || []) {
+      if (attribute.name.startsWith('data-v-')) target.setAttribute(attribute.name, attribute.value);
+    }
+  }
+
+  function findSidebarMenu() {
+    const direct = pageDocument.querySelector('.sideBar-container > ul.el-menu[role="menubar"]');
+    if (direct) return direct;
+    return [...pageDocument.querySelectorAll('ul.el-menu[role="menubar"]')]
+      .find((menu) => menu.closest('.sideBar-container, .sideBar')) || null;
+  }
+
+  function isUiVisible() {
+    return Boolean(state.ui?.host?.isConnected && state.ui.host.style.display !== 'none');
+  }
+
+  function updateSidebarEntryState() {
+    const entry = pageDocument.getElementById(SIDEBAR_ENTRY_ID);
+    if (!entry) return;
+    const visible = isUiVisible();
+    entry.classList.toggle('is-active', visible);
+    entry.setAttribute('aria-expanded', visible ? 'true' : 'false');
+  }
+
+  function hideUi() {
+    if (!state.ui) return;
+    if (state.recording) stopRecording('面板已关闭，本轮记录已停止。');
+    state.ui.host.style.display = 'none';
+    updateSidebarEntryState();
+  }
+
+  function toggleUi() {
+    if (isUiVisible()) hideUi();
+    else showUi();
+  }
+
+  function getNativeSidebarItems(menu) {
+    return [...menu.children].filter((child) => (
+      child.matches?.('li.el-menu-item')
+      && !child.classList.contains('lx-local-plugin-sidebar-entry')
+    ));
+  }
+
+  function findSettingsSidebarItem(menu) {
+    return [...getNativeSidebarItems(menu)].reverse()
+      .find((item) => item.querySelector('i.lx_nav_set') || item.textContent.trim() === '设置') || null;
+  }
+
+  function normalizeSidebarPluginEntries(menu) {
+    const pluginEntries = [...menu.children].filter((child) => (
+      child.matches?.('li.lx-local-plugin-sidebar-entry') && child.dataset?.lxToolEntry
+    ));
+    if (!pluginEntries.length) return;
+    const readOrder = (entry) => {
+      const order = Number(entry.dataset.lxToolOrder);
+      return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+    };
+    const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+    pluginEntries.sort((left, right) => (
+      readOrder(left) - readOrder(right)
+      || compareText(left.dataset.lxToolEntry || '', right.dataset.lxToolEntry || '')
+      || compareText(left.id || '', right.id || '')
+    ));
+    const currentTail = [...menu.children].slice(-pluginEntries.length);
+    if (currentTail.every((entry, index) => entry === pluginEntries[index])) return;
+    pluginEntries.forEach((entry) => menu.appendChild(entry));
+  }
+
+  function positionSidebarEntry(menu) {
+    normalizeSidebarPluginEntries(menu);
+  }
+
+  function createSidebarEntry(menu) {
+    const nativeItems = getNativeSidebarItems(menu);
+    if (!nativeItems.length) return null;
+    const settingsItem = findSettingsSidebarItem(menu);
+    const referenceItem = settingsItem || nativeItems[nativeItems.length - 1] || null;
+    const referenceControl = referenceItem?.querySelector(':scope > a');
+    const referenceIcon = referenceControl?.querySelector('i');
+    const referenceLabel = referenceControl?.querySelector('span');
+
+    const entry = pageDocument.createElement('li');
+    copyScopedAttributes(referenceItem, entry);
+    entry.id = SIDEBAR_ENTRY_ID;
+    entry.className = 'el-menu-item lx-local-plugin-sidebar-entry';
+    entry.style.paddingLeft = referenceItem?.style?.paddingLeft || '20px';
+    entry.dataset.lxToolEntry = 'request-probe';
+    entry.dataset.lxToolOrder = '100';
+    entry.setAttribute('role', 'menuitem');
+    entry.setAttribute('tabindex', '0');
+    entry.setAttribute('aria-haspopup', 'dialog');
+    entry.setAttribute('aria-controls', HOST_ID);
+    entry.setAttribute('aria-expanded', 'false');
+    entry.setAttribute('aria-label', '显示或隐藏领星接口探针面板');
+    entry.title = '领星接口探针';
+
+    const control = pageDocument.createElement('a');
+    copyScopedAttributes(referenceControl, control);
+    control.className = 'lx-local-plugin-sidebar-control';
+    control.setAttribute('tabindex', '-1');
+    control.setAttribute('aria-hidden', 'true');
+
+    const icon = pageDocument.createElement('i');
+    copyScopedAttributes(referenceIcon, icon);
+    icon.className = 'lx-local-plugin-sidebar-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '⌕';
+
+    const label = pageDocument.createElement('span');
+    copyScopedAttributes(referenceLabel, label);
+    label.className = 'lx-local-plugin-sidebar-label';
+    label.textContent = '探针';
+    control.append(icon, label);
+    entry.appendChild(control);
+
+    const activate = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleUi();
+    };
+    entry.addEventListener('click', activate);
+    entry.addEventListener('keydown', activate);
+    menu.appendChild(entry);
+    positionSidebarEntry(menu);
+    updateSidebarEntryState();
+    return entry;
+  }
+
+  function ensureSidebarEntry() {
+    try {
+      addSidebarEntryStyles();
+      const menu = findSidebarMenu();
+      if (!menu) return;
+      if (!findSettingsSidebarItem(menu)) return;
+      const existing = pageDocument.getElementById(SIDEBAR_ENTRY_ID);
+      if (existing?.parentElement === menu) {
+        positionSidebarEntry(menu);
+        updateSidebarEntryState();
+        return;
+      }
+      existing?.remove();
+      createSidebarEntry(menu);
+    } catch (error) {
+      console.error('[领星接口探针] 挂载左侧导航入口失败', error);
+    }
+  }
+
+  function startSidebarEntryWatchdog() {
+    if (state.sidebarStartTimer || state.sidebarWatchdog) return;
+    state.sidebarStartTimer = pageWindow.setTimeout(() => {
+      state.sidebarStartTimer = null;
+      ensureSidebarEntry();
+      state.sidebarWatchdog = pageWindow.setInterval(ensureSidebarEntry, SIDEBAR_WATCHDOG_MS);
+    }, SIDEBAR_INITIAL_DELAY_MS);
   }
 
   function createUi() {
@@ -1215,34 +1231,18 @@
     const shadow = host.attachShadow({ mode: 'closed' });
     shadow.innerHTML = `
       <style>
-        *{box-sizing:border-box}button,input{font:inherit}.panel{width:460px;max-height:min(78vh,760px);background:#fff;border:1px solid #cfd7df;border-radius:11px;box-shadow:0 8px 28px #0003;overflow:hidden}.panel.collapsed{width:auto;min-width:218px;border-radius:999px}.head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#0e3a5d;color:#fff;cursor:move;user-select:none}.collapsed .head{border-radius:999px;padding:7px 8px 7px 12px}.title{font-weight:700;white-space:nowrap}.compact{flex:1;color:#dce7ef;font-size:12px;white-space:nowrap}.compact[data-tone="online"]{color:#a7f3cf}.compact[data-tone="running"]{color:#9fdbff}.compact[data-tone="error"]{color:#ffd08a}.compact[data-tone="offline"]{color:#ffb2aa}.collapsed .title{display:none}.collapsed .compact{font-weight:650}.icon{border:0;background:#ffffff20;color:#fff;border-radius:5px;width:27px;height:25px;cursor:pointer}.collapsed .icon{border-radius:999px}.body{padding:10px;overflow:auto;max-height:calc(min(78vh,760px) - 44px)}.collapsed .body{display:none}.runtime-overview{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.runtime-card{padding:8px;border:1px solid #dfe6ec;border-radius:7px;background:#f8fafc}.runtime-card span{display:block;color:#71808b;font-size:11px}.runtime-card strong{display:block;margin-top:2px;font-size:16px}.runtime-card strong[data-tone="online"]{color:#18794e}.runtime-card strong[data-tone="running"]{color:#0f6ca6}.runtime-card strong[data-tone="error"],.runtime-card strong[data-tone="offline"]{color:#b42318}.runtime-sub{font-size:10px;color:#87939c;margin-top:1px}.runtime-list{margin-top:8px;border:1px solid #dfe5ea;border-radius:7px;max-height:240px;overflow:auto}.runtime-client{padding:7px 8px;border-bottom:1px solid #edf1f4}.runtime-client:last-child{border-bottom:0}.runtime-client-main{display:flex;align-items:center;gap:7px}.runtime-client-main strong{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.runtime-badge{font-size:10px;border-radius:999px;padding:2px 7px;background:#e7f4ed;color:#18794e}.runtime-badge[data-state="running"]{background:#e0f1fb;color:#0f6ca6}.runtime-badge[data-state="error"]{background:#ffebe9;color:#b42318}.runtime-badge[data-state="offline"]{background:#eef1f4;color:#6b7780}.runtime-client-meta,.runtime-capabilities{font-size:11px;color:#71808b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.runtime-message{font-size:11px;color:#344b5d;margin-top:3px;overflow-wrap:anywhere}.runtime-client[data-state="error"] .runtime-message{color:#b42318}.runtime-client[data-state="running"] .runtime-message{color:#0f6ca6}.runtime-hint{margin-top:8px;padding:8px;border-radius:6px;background:#f5f7f9;color:#5e6d79}.runtime-footer{display:flex;justify-content:space-between;gap:8px;margin-top:7px;color:#7a8790;font-size:11px}.advanced{margin-top:10px;border-top:1px solid #dfe5ea;padding-top:8px}.advanced>summary{cursor:pointer;font-weight:650;color:#344b5d;list-style:none}.advanced>summary::-webkit-details-marker{display:none}.advanced>summary:before{content:'▸';display:inline-block;margin-right:5px}.advanced[open]>summary:before{content:'▾'}.mode{float:right;font-size:11px;color:#71808b}.mode[data-recording="true"]{color:#b36b00}.probe-body{padding-top:9px}.label{display:flex;gap:7px;align-items:center;margin-bottom:8px}.label input{min-width:0;flex:1;border:1px solid #cdd7df;border-radius:5px;padding:5px 7px}.tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tools button{border:1px solid #b8c6d1;background:#f7fafc;border-radius:5px;padding:5px 8px;cursor:pointer}.tools button.primary{background:#0f6ca6;color:#fff;border-color:#0f6ca6}.tools button.danger{color:#a72828}.tools button:disabled{opacity:.45;cursor:not-allowed}.meta{display:flex;justify-content:space-between;color:#5e6d79;margin:5px 0}.list{border:1px solid #dfe5ea;border-radius:5px;max-height:240px;overflow:auto}.row{display:grid;grid-template-columns:18px 64px 1fr 42px;align-items:center;gap:5px;padding:5px 6px;border-bottom:1px solid #edf1f4;cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:#f4f8fb}.badge{font-size:11px;border-radius:4px;padding:2px 4px;text-align:center;background:#e8eef3;overflow:hidden}.badge.logical{background:#d8efff;color:#07527d}.badge.network{background:#eee4ff;color:#573383}.target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.phase{text-align:right;color:#65737e;font-size:11px}.probe-status{min-height:19px;color:#65737e;margin-top:7px;overflow-wrap:anywhere}.probe-status[data-kind="ok"]{color:#18794e}.probe-status[data-kind="error"]{color:#b42318}.hint{color:#71808b;font-size:11px;margin-top:5px}.preview{white-space:pre-wrap;max-height:190px;overflow:auto;background:#101820;color:#d9e4ec;padding:7px;border-radius:5px;margin-top:7px;font:11px/1.35 Consolas,monospace}
+        *{box-sizing:border-box}button,input{font:inherit}.panel{width:460px;max-width:calc(100vw - 24px);max-height:min(78vh,760px);background:#fff;border:1px solid #cfd7df;border-radius:11px;box-shadow:0 8px 28px #0003;overflow:hidden}.head{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#0e3a5d;color:#fff;cursor:move;user-select:none;touch-action:none}.title{font-weight:700;white-space:nowrap}.mode{margin-left:auto;color:#dce7ef;font-size:12px;white-space:nowrap}.mode[data-recording="true"]{color:#ffd08a}.icon{border:0;background:#ffffff20;color:#fff;border-radius:5px;width:27px;height:25px;cursor:pointer}.body{padding:10px;overflow:auto;max-height:calc(min(78vh,760px) - 44px)}.label{display:flex;gap:7px;align-items:center;margin-bottom:8px}.label input{min-width:0;flex:1;border:1px solid #cdd7df;border-radius:5px;padding:5px 7px}.tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tools button{border:1px solid #b8c6d1;background:#f7fafc;border-radius:5px;padding:5px 8px;cursor:pointer}.tools button.primary{background:#0f6ca6;color:#fff;border-color:#0f6ca6}.tools button.danger{color:#a72828}.tools button:disabled{opacity:.45;cursor:not-allowed}.meta{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#5e6d79;margin:5px 0}.meta-left{display:flex;align-items:center;gap:10px;min-width:0}.select-all{display:inline-flex;align-items:center;gap:4px;color:#344b5d;font-weight:650;cursor:pointer;white-space:nowrap}.select-all input{margin:0}.select-all input:disabled+span{color:#98a3ab}.list{border:1px solid #dfe5ea;border-radius:5px;max-height:240px;overflow:auto}.row{display:grid;grid-template-columns:18px 64px 1fr 42px;align-items:center;gap:5px;padding:5px 6px;border-bottom:1px solid #edf1f4;cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:#f4f8fb}.badge{font-size:11px;border-radius:4px;padding:2px 4px;text-align:center;background:#e8eef3;overflow:hidden}.badge.logical{background:#d8efff;color:#07527d}.badge.network{background:#eee4ff;color:#573383}.target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.phase{text-align:right;color:#65737e;font-size:11px}.probe-status{min-height:19px;color:#65737e;margin-top:7px;overflow-wrap:anywhere}.probe-status[data-kind="ok"]{color:#18794e}.probe-status[data-kind="error"]{color:#b42318}.hint{color:#71808b;font-size:11px;margin-top:5px}.preview{white-space:pre-wrap;max-height:190px;overflow:auto;background:#101820;color:#d9e4ec;padding:7px;border-radius:5px;margin-top:7px;font:11px/1.35 Consolas,monospace}
       </style>
-      <section class="panel collapsed">
-        <header class="head"><span class="title">领星自动化中心</span><span class="compact" data-tone="checking">◌ 正在检查</span><button class="icon collapse" title="收起/展开">+</button><button class="icon close" title="完全隐藏">×</button></header>
+      <section class="panel">
+        <header class="head"><span class="title">领星接口探针</span><span class="mode">○ 已停止</span><button class="icon close" title="关闭探针面板">×</button></header>
         <div class="body">
-          <section class="runtime-section">
-            <div class="runtime-overview">
-              <div class="runtime-card"><span>本地桥</span><strong class="bridge-state">检查中</strong></div>
-              <div class="runtime-card"><span>在线功能</span><strong class="online-clients">0</strong><div class="runtime-sub"><span class="online-instances">0</span> 个页面实例</div></div>
-              <div class="runtime-card"><span>运行中</span><strong class="running-count">0</strong></div>
-              <div class="runtime-card"><span>异常</span><strong class="error-count">0</strong></div>
-            </div>
-            <div class="runtime-list"></div>
-            <div class="runtime-hint">正在读取运行状态…</div>
-            <div class="runtime-footer"><span>按功能去重，多标签页只计 1 个在线功能</span><span class="runtime-updated">等待首次检查</span></div>
-          </section>
-          <details class="advanced">
-            <summary>接口探针（高级工具）<span class="mode">○ 已停止</span></summary>
-            <div class="probe-body">
-              <label class="label"><span>样本说明</span><input class="label-input" maxlength="80" placeholder="例如：产品列表第一页"></label>
-              <div class="tools"><button class="primary start">开始记录</button><button class="stop" disabled>停止</button><button class="clear danger">清空</button><button class="pair">桥接配对</button><button class="save">保存到本地</button><button class="download">下载 JSON</button></div>
-              <div class="meta"><span>双击一行预览</span><span class="count">0 条</span></div>
-              <div class="list"></div>
-              <pre class="preview" hidden></pre>
-              <div class="probe-status">待命。开始后请在页面完成一次目标操作。</div>
-              <div class="hint">探针默认不记录；仅在你手动点击“开始记录”后观察，保存前会脱敏。它不会重放请求、自动翻页或修改业务数据。</div>
-            </div>
-          </details>
+          <label class="label"><span>样本说明</span><input class="label-input" maxlength="80" placeholder="例如：产品列表第一页"></label>
+          <div class="tools"><button class="primary start">开始记录</button><button class="stop" disabled>停止</button><button class="clear danger">清空</button><button class="pair">桥接配对</button><button class="save">保存到本地</button><button class="download">下载 JSON</button></div>
+          <div class="meta"><div class="meta-left"><label class="select-all"><input class="select-all-input" type="checkbox" disabled><span>全选</span></label><span>双击一行预览</span></div><span class="count">0 条</span></div>
+          <div class="list"></div>
+          <pre class="preview" hidden></pre>
+          <div class="probe-status">待命。开始后请在页面完成一次目标操作。</div>
+          <div class="hint">探针默认不记录；仅在你手动点击“开始记录”后观察，保存前会脱敏。它不会重放请求、自动翻页或修改业务数据。</div>
         </div>
       </section>`;
     pageDocument.documentElement.appendChild(host);
@@ -1250,15 +1250,6 @@
     state.ui = {
       host,
       panel: pick('.panel'),
-      compact: pick('.compact'),
-      bridgeState: pick('.bridge-state'),
-      onlineClients: pick('.online-clients'),
-      onlineInstances: pick('.online-instances'),
-      runningCount: pick('.running-count'),
-      errorCount: pick('.error-count'),
-      runtimeList: pick('.runtime-list'),
-      runtimeHint: pick('.runtime-hint'),
-      runtimeUpdated: pick('.runtime-updated'),
       mode: pick('.mode'),
       start: pick('.start'),
       stop: pick('.stop'),
@@ -1267,6 +1258,7 @@
       save: pick('.save'),
       download: pick('.download'),
       label: pick('.label-input'),
+      selectAll: pick('.select-all-input'),
       count: pick('.count'),
       list: pick('.list'),
       preview: pick('.preview'),
@@ -1278,20 +1270,10 @@
     bindAsync(state.ui.pair, pairBridge);
     bindAsync(state.ui.save, saveToBridge);
     bindAsync(state.ui.download, downloadEvidence);
-    pick('.collapse').addEventListener('click', (event) => {
-      const collapsed = state.ui.panel.classList.toggle('collapsed');
-      event.currentTarget.textContent = collapsed ? '+' : '—';
-    });
-    pick('.close').addEventListener('click', () => {
-      if (state.recording) stopRecording('面板已关闭，本轮记录已停止。');
-      host.style.display = 'none';
-    });
+    state.ui.selectAll.addEventListener('change', () => setAllEntriesSelected(state.ui.selectAll.checked));
+    pick('.close').addEventListener('click', hideUi);
     installDrag(pick('.head'), host);
     render();
-    void refreshRuntimeStatus();
-    if (!state.runtime.refreshTimer) {
-      state.runtime.refreshTimer = pageWindow.setInterval(() => void refreshRuntimeStatus(), RUNTIME_REFRESH_MS);
-    }
     if (state.hookErrors.length) {
       setStatus(`部分网络监听未安装：${state.hookErrors.join('；')}。逻辑层仍会尝试记录。`, 'error');
     }
@@ -1301,14 +1283,13 @@
     if (!state.ui) createUi();
     if (state.ui) {
       state.ui.host.style.display = '';
-      void refreshRuntimeStatus();
+      updateSidebarEntryState();
     }
   }
 
   if (pageDocument.readyState === 'loading') {
-    pageDocument.addEventListener('DOMContentLoaded', createUi, { once: true });
+    pageDocument.addEventListener('DOMContentLoaded', startSidebarEntryWatchdog, { once: true });
   } else {
-    createUi();
+    startSidebarEntryWatchdog();
   }
-  GM_registerMenuCommand('领星自动化中心：显示状态栏', showUi);
 }());

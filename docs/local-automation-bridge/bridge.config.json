@@ -39,6 +39,12 @@
       "store": "shared",
       "folder": "配置\\货代渠道",
       "max_bytes": 1048576
+    },
+    "lingxing_label_tasks": {
+      "name": "领星标签待办快照",
+      "store": "shared",
+      "folder": "配置\\标签待办",
+      "max_bytes": 1048576
     }
   },
   "artifact_buckets": {
@@ -55,6 +61,13 @@
       "folder": "接口样本\\领星",
       "max_bytes": 8388608,
       "allowed_extensions": [".json"]
+    },
+    "lingxing_fba_tracking": {
+      "name": "领星 FBA 跟踪号补全日志",
+      "store": "shared",
+      "folder": "文件\\领星FBA跟踪号",
+      "max_bytes": 8388608,
+      "allowed_extensions": [".json", ".csv"]
     }
   },
   "job_capabilities": {
@@ -125,6 +138,24 @@
       "permissions": [
         "artifact:write:lingxing_request_samples",
         "runtime:read"
+      ]
+    },
+    "userscript.lingxing.fba.tracking.v1": {
+      "name": "领星 FBA 跟踪号自动补全助手",
+      "aliases": [],
+      "pairing": "code",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": [
+        "artifact:write:lingxing_fba_tracking"
+      ]
+    },
+    "userscript.lingxing.ship-plan.v1": {
+      "name": "领星发货计划助手",
+      "aliases": [],
+      "pairing": "code",
+      "allowed_origins": ["https://erp.lingxing.com"],
+      "permissions": [
+        "config:read:lingxing_label_tasks"
       ]
     }
   }

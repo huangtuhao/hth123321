@@ -15,8 +15,9 @@ function loadProbe({ vueInstance = null, fetchImpl = null } = {}) {
       startRecording,
       stopRecording,
       sanitizeValue,
-      compactRuntimeText,
-      normalizeRuntimeSummary,
+      fitPositionToViewport,
+      installDrag,
+      setAllEntriesSelected,
       state,
     });
   }());`);
@@ -79,6 +80,8 @@ function loadProbe({ vueInstance = null, fetchImpl = null } = {}) {
     clearTimeout() {},
     setInterval() { return 2; },
     clearInterval() {},
+    innerWidth: 1200,
+    innerHeight: 800,
   };
   const context = vmModule.createContext({
     unsafeWindow: pageWindow,
@@ -126,15 +129,25 @@ test('network hooks stay untouched until probe recording starts', () => {
   assert.equal(api.state.networkHooksInstalled, true);
 });
 
-test('collapsed runtime label prioritizes offline, error and running states', () => {
+test('probe panel drag is clamped to the visible viewport', () => {
   const { api } = loadProbe();
-  api.state.runtime.bridge = 'offline';
-  assert.equal(api.compactRuntimeText(), '● 本地桥离线');
-  api.state.runtime.bridge = 'online';
-  api.state.runtime.summary = api.normalizeRuntimeSummary({ online_clients: 3, running: 1, error: 0 });
-  assert.equal(api.compactRuntimeText(), '● 3 在线 · 1 运行');
-  api.state.runtime.summary = api.normalizeRuntimeSummary({ online_clients: 3, running: 1, error: 2 });
-  assert.equal(api.compactRuntimeText(), '● 3 在线 · 2 异常');
+  assert.equal(api.fitPositionToViewport({ left: 320, top: 180 }, 460, 500, 1200, 800).left, 320);
+  assert.equal(api.fitPositionToViewport({ left: 320, top: 180 }, 460, 500, 1200, 800).top, 180);
+  assert.equal(api.fitPositionToViewport({ left: 1100, top: 700 }, 460, 500, 1200, 800).left, 740);
+  assert.equal(api.fitPositionToViewport({ left: 1100, top: 700 }, 460, 500, 1200, 800).top, 300);
+});
+
+test('select all toggles every captured request in both directions', () => {
+  const { api } = loadProbe();
+  api.state.entries = [
+    { id: 'one', selected: false },
+    { id: 'two', selected: true },
+    { id: 'three', selected: false },
+  ];
+  api.setAllEntriesSelected(true);
+  assert.equal(api.state.entries.every((entry) => entry.selected), true);
+  api.setAllEntriesSelected(false);
+  assert.equal(api.state.entries.every((entry) => !entry.selected), true);
 });
 
 test('request hooks fail open when sanitizing a revoked Proxy', async () => {
