@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         沃尔玛竞品快照
 // @namespace    https://local.wm-snapshot
-// @version      0.4.0
+// @version      0.5.0
 // @description  沃尔玛竞品快照：详情页面板（嵌入页面，含评论节奏）、搜索页竞争汇总与卡片标注；本地累积历史，可导出 CSV
 // @author       local
 // @match        https://www.walmart.com/ip/*
@@ -22,6 +22,8 @@
   const STORE_KEY = 'wm_snap_v1';
   const PANEL_ID = 'wm-snapshot-host';
   const MAX_RECORDS = 8000;
+  // 面板上显示版本号：截图即可确认浏览器里跑的是哪一版
+  const VER = '0.5.0';
 
   /* ---------------- 存储 ---------------- */
   function hasGM() {
@@ -192,7 +194,7 @@
   :host{all:initial}
   .wrap{background:#fff;border:1px solid #e3e4e5;border-radius:8px;box-sizing:border-box;width:100%;
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;color:#1a1a1a}
-  .wrap.float{position:fixed;top:80px;right:16px;width:312px;max-height:calc(100vh - 120px);overflow:auto;
+  .wrap.float{position:fixed;bottom:20px;right:16px;width:312px;max-height:calc(100vh - 150px);overflow:auto;
     border-radius:12px;border:0.5px solid rgba(0,0,0,.18);box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:2147483000}
   .body{display:block}
   .cols{display:grid;grid-template-columns:1fr;gap:0}
@@ -222,7 +224,7 @@
   button:hover{background:#f0f0f0}
   button.primary{border-color:#0071dc;color:#0071dc}
   .foot{padding:7px 14px 9px;font-size:11px;color:#9a9a9a;line-height:1.6;border-top:1px solid #f0f0f0}
-  .cbt{position:fixed;top:80px;right:16px;z-index:2147483000;background:#0071dc;color:#fff;
+  .cbt{position:fixed;bottom:20px;right:16px;z-index:2147483000;background:#0071dc;color:#fff;
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:12px;
     padding:7px 11px;border-radius:8px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.2)}
   `;
@@ -269,47 +271,68 @@
       }
     }
 
-    host.querySelector('.wrap').classList.add('float');
+    const fw = wrapEl(host);
+    if (fw) fw.classList.add('float');
     host.style.cssText = '';
     document.body.appendChild(host);
     return 'floating';
   }
 
+  // host 的样式都在 Shadow DOM 里，host.querySelector 取不到，必须走 shadowRoot
+  function wrapEl(host) {
+    return host.shadowRoot ? host.shadowRoot.querySelector('.wrap') : null;
+  }
+
   function mountSearch(host) {
-    const first = document.querySelector('[data-item-id]');
-    if (first) {
-      let a = first;
+    host.style.cssText = 'display:block;width:100%;margin:0 0 12px;';
+
+    function tryInto(node, before) {
+      if (!node) return false;
+      node.insertBefore(host, before === undefined ? node.firstChild : before);
+      const r = host.getBoundingClientRect();
+      // 宽度合理 + 没有被父容器的固定行高裁掉（scrollHeight 明显大于实际高度 = 被裁）
+      const okW = r.width >= 360 && r.width <= 2400;
+      const okH = r.height >= 28 && r.height + 4 >= host.scrollHeight;
+      if (okW && okH) return true;
+      host.remove();
+      return false;
+    }
+
+    // ① 找结果网格：从第一个卡片向上，取「包含 ≥3 个卡片的最近祖先」
+    const cards = document.querySelectorAll('[data-item-id]');
+    if (cards.length >= 3) {
+      let a = cards[0];
+      let grid = null;
       for (let i = 0; i < 8 && a.parentElement; i++) {
-        if (wide(a, 640, 1600) && a !== document.body) {
-          a.parentElement.insertBefore(host, a);
-          if (wide(host, 500, 1700)) return 'embedded';
-          host.remove();
-          break;
-        }
         a = a.parentElement;
+        if (a.querySelectorAll('[data-item-id]').length >= 3) { grid = a; break; }
+      }
+      if (grid) {
+        let isGrid = false;
+        try { isGrid = /grid/.test(getComputedStyle(grid).display); } catch (e) { }
+        // CSS Grid 容器：让它横跨整行，避免被挤成一列
+        if (isGrid) host.style.gridColumn = '1 / -1';
+        if (tryInto(grid)) return 'embedded';
+        host.style.gridColumn = '';
+        // 网格是 flex 行时，改插到网格前面（正常块级流）
+        if (grid.parentElement && tryInto(grid.parentElement, grid)) return 'embedded';
       }
     }
 
-    const heading = Array.prototype.slice.call(document.querySelectorAll('h1, h2, div, span'))
+    // ② 文本锚点：插到「Results for ...」标题块之后
+    const heading = Array.prototype.slice.call(document.querySelectorAll('h1, h2'))
       .filter(function (e) {
         const t = (e.textContent || '').trim();
-        return /^Results for\s/i.test(t) && t.length < 120 && e.getBoundingClientRect().height < 60;
+        return /^Results for\s/i.test(t) && t.length < 160;
       })[0];
-    if (heading) {
-      let a = heading;
-      for (let i = 0; i < 5 && a.parentElement; i++) {
-        if (wide(a, 500, 1600)) {
-          a.parentElement.insertBefore(host, a.nextSibling);
-          if (wide(host, 400, 1700)) return 'embedded';
-          host.remove();
-          break;
-        }
-        a = a.parentElement;
-      }
+    if (heading && heading.parentElement) {
+      if (tryInto(heading.parentElement, heading.nextSibling)) return 'embedded';
     }
 
-    host.querySelector('.wrap').classList.add('float');
-    host.style.cssText = '';
+    // ③ 兜底：悬浮到右下角（右下永远不会被吸顶导航盖住）
+    host.style.cssText = 'display:block;';
+    const w = wrapEl(host);
+    if (w) w.classList.add('float');
     document.body.appendChild(host);
     return 'floating';
   }
@@ -447,6 +470,10 @@
 
     const foot = el('div', 'foot');
     foot.textContent = '沃尔玛前台不提供：销量、BSR、搜索量、商品重量、包装尺寸、上架日期。上架天数由本地首次记录推算。';
+    const fv = document.createElement('span');
+    fv.className = 'ver';
+    fv.textContent = 'v' + VER;
+    foot.appendChild(fv);
 
     wrap.appendChild(head);
     wrap.appendChild(sec1);
@@ -583,9 +610,15 @@
 
   const SEARCH_CSS = `
   :host{all:initial}
-  .wrap{position:fixed;top:80px;right:16px;width:288px;background:#fff;border-radius:12px;
-    border:0.5px solid rgba(0,0,0,.18);box-shadow:0 6px 24px rgba(0,0,0,.12);
-    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;color:#1a1a1a;z-index:2147483000}
+  .wrap{background:#fff;border:1px solid #e3e4e5;border-radius:8px;box-sizing:border-box;width:100%;
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;color:#1a1a1a}
+  .wrap.float{position:fixed;bottom:20px;right:16px;width:300px;max-height:calc(100vh - 150px);overflow:auto;
+    z-index:2147483000;border-radius:12px;border:0.5px solid rgba(0,0,0,.18);
+    box-shadow:0 8px 28px rgba(0,0,0,.18)}
+  .wrap.mini{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:8px 14px;cursor:pointer;font-size:12.5px}
+  .wrap.mini:hover{background:#fafafa}
+  .ver{font-size:10px;color:#b5b5b5;margin-left:8px;font-weight:400}
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;
     background:#f7f7f7;border-bottom:0.5px solid rgba(0,0,0,.1);border-radius:12px 12px 0 0}
   .t1{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
@@ -602,7 +635,7 @@
   button{flex:1;font:inherit;font-size:12px;padding:6px 4px;border-radius:7px;border:0.5px solid #cfcfcf;background:#fff;cursor:pointer}
   button:hover{background:#f0f0f0}
   button.primary{border-color:#0071dc;color:#0071dc}
-  .cbt{position:fixed;top:80px;right:16px;z-index:2147483000;background:#0071dc;color:#fff;
+  .cbt{position:fixed;bottom:20px;right:16px;z-index:2147483000;background:#0071dc;color:#fff;
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:12px;
     padding:7px 11px;border-radius:8px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.2)}
   `;
@@ -624,10 +657,15 @@
     host.style.cssText = 'display:block;width:100%;margin:12px 0;';
 
     if (collapsed) {
-      const bar = el('div', 'wrap');
-      bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;cursor:pointer';
-      bar.appendChild(el('span', '', '竞争汇总 · ' + data.term + '（' + data.total + ' 个）'));
-      bar.appendChild(el('span', 't2', '展开 ▸'));
+      const bar = el('div', 'wrap mini');
+      const lb = document.createElement('span');
+      lb.textContent = '竞争汇总 · ' + data.term + '（' + data.total + ' 个）';
+      lb.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      const rb = document.createElement('span');
+      rb.textContent = '展开 ▸';
+      rb.style.cssText = 'flex:0 0 auto;color:#0071dc';
+      bar.appendChild(lb);
+      bar.appendChild(rb);
       bar.onclick = function () {
         try { if (hasGM()) GM_setValue('wm_search_collapsed', '0'); else localStorage.setItem('wm_search_collapsed', '0'); } catch (e) { }
         renderSearchPanel(data);
@@ -662,6 +700,10 @@
     t1.style.cssText = 'font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     const t2 = document.createElement('div');
     t2.textContent = '搜索结果 ' + data.total + ' 个 · 本页 ' + s.cards + ' 个（去重后）';
+    const t2v = document.createElement('span');
+    t2v.className = 'ver';
+    t2v.textContent = 'v' + VER;
+    t2.appendChild(t2v);
     t2.style.cssText = 'font-size:11px;color:#6b6b6b;margin-top:2px';
     hl.appendChild(t1); hl.appendChild(t2);
 
