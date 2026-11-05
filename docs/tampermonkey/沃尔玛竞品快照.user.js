@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         沃尔玛竞品快照
 // @namespace    https://local.wm-snapshot
-// @version      0.7.0
+// @version      0.8.0
 // @description  沃尔玛竞品快照：详情页面板（嵌入页面，含 24 个月评论频率图）、搜索页竞争汇总与卡片标注；本地累积历史，可导出 CSV
 // @author       local
 // @match        https://www.walmart.com/ip/*
@@ -23,7 +23,7 @@
   const PANEL_ID = 'wm-snapshot-host';
   const MAX_RECORDS = 8000;
   // 面板上显示版本号：截图即可确认浏览器里跑的是哪一版
-  const VER = '0.7.0';
+  const VER = '0.8.0';
 
   /* ---------------- 存储 ---------------- */
   function hasGM() {
@@ -1097,7 +1097,67 @@
     return sec;
   }
 
-  function renderRhythm(body, data, c) {
+  /* ---------------- 缓存策略 ---------------- */
+  // 评论不会一天变几次，36 小时抓一次足够；期间直接读缓存，打开即出图
+  const REV_TTL_MS = 36 * 3600 * 1000;
+
+  function revAge(c) {
+    if (!c) return null;
+    if (typeof c.ts === 'number' && c.ts > 0) return Math.max(0, Date.now() - c.ts);
+    // 老缓存没有 ts，退回按日期估算
+    if (c.date) return Math.max(0, Date.now() - new Date(c.date + 'T00:00:00').getTime());
+    return null;
+  }
+
+  function revAgeText(ms) {
+    if (ms === null) return '未知';
+    const h = ms / 3600000;
+    if (h < 1) return '刚刚';
+    if (h < 24) return Math.round(h) + ' 小时前';
+    return Math.round(h / 24) + ' 天前';
+  }
+
+  function revHasCache(c) {
+    return !!(c && c.v === REV_CACHE_VER && c.points && c.points.length);
+  }
+
+  function revFresh(c) {
+    if (!revHasCache(c)) return false;
+    const a = revAge(c);
+    return a !== null && a < REV_TTL_MS;
+  }
+
+  function buildRevCache(g, data) {
+    return {
+      v: REV_CACHE_VER,
+      ts: Date.now(),
+      date: todayStr(),
+      total: (g.total === null || g.total === undefined) ? data.reviews : g.total,
+      withText: g.withText,
+      full: g.full,
+      pages: g.pages,
+      pageTotal: g.pageTotal,
+      points: g.points.map(function (p) { return { k: p.k, n: p.n, d: todayStr(p.d), i: p.i ? 1 : 0 }; })
+    };
+  }
+
+  function recordRevSnapshot(data, c2) {
+    try {
+      const pts = c2.points.map(function (p) { return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i }; });
+      const cum = makeCum(pts, c2.total);
+      const d30 = new Date(Date.now() - 30 * 864e5);
+      const last30 = Math.max(0, Math.round(cum(d30)));
+      const latest = pts.reduce(function (a, p) { return p.d > a ? p.d : a; }, pts[0].d);
+      record(Object.assign({}, data, {
+        latestReview: todayStr(latest),
+        reviewDaysSince: Math.round(daysAgo(latest)),
+        reviewLast30: last30
+      }));
+    } catch (e) { }
+  }
+
+  function renderRhythm(body, data, c, opt) {
+    opt = opt || {};
     const pts = (c.points || []).map(function (p) {
       return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i };
     }).filter(function (p) { return !isNaN(p.d.getTime()); });
@@ -1111,10 +1171,11 @@
     const series = buildSeries(pts, c.total, c.full);
     const latest = pts.reduce(function (a, p) { return p.d > a ? p.d : a; }, pts[0].d);
     const dsl = Math.round(daysAgo(latest));
+    // 时点指标要按缓存抓取时间算，否则 2 天前的缓存会把「近 30 天」算多
+    const asOf = new Date(Date.now() - (revAge(c) || 0));
     const cum = makeCum(pts, c.total);
-    const now = new Date();
-    const d30 = new Date(now.getTime() - 30 * 864e5);
-    const d60 = new Date(now.getTime() - 60 * 864e5);
+    const d30 = new Date(asOf.getTime() - 30 * 864e5);
+    const d60 = new Date(asOf.getTime() - 60 * 864e5);
     const last30 = Math.max(0, Math.round(cum(d30)));
     const prev30 = Math.max(0, Math.round(cum(d60) - cum(d30)));
     const mom = prev30 > 0 ? Math.round((last30 - prev30) / prev30 * 100) : null;
@@ -1150,34 +1211,59 @@
     note.style.cssText = 'font-size:10.5px;color:#9a9a9a;line-height:1.6;margin-top:5px';
     note.textContent = '已抓 ' + pts.length + ' / ' + (c.total === null || c.total === undefined ? '?' : c.total) + ' 条（' +
       (c.full ? '全量' : '抽样 ' + c.pages + ' 页') + '）' +
-      (c.full ? '' : '，月度值为插值估算') + ' · ' + String(c.date || '').slice(5);
+      (c.full ? '' : '，月度值为插值估算') +
+      ' · 缓存于 ' + revAgeText(revAge(c)) + (opt.stale ? '，正在后台更新…' : '');
     body.appendChild(note);
 
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:6px;margin-top:7px';
     const re = document.createElement('button');
-    re.textContent = '重新抓取';
-    re.style.cssText = 'margin-top:7px;width:100%;font:inherit;font-size:11.5px;padding:5px;border-radius:6px;border:0.5px solid #cfcfcf;background:#fff;color:#666;cursor:pointer';
+    re.textContent = opt.stale ? '立即刷新' : '刷新（忽略缓存）';
+    re.style.cssText = 'flex:1;font:inherit;font-size:11.5px;padding:5px;border-radius:6px;border:0.5px solid #cfcfcf;background:#fff;color:#666;cursor:pointer';
     re.onclick = function () {
-      const cache = loadRevCache();
-      delete cache[data.wid];
-      saveRevCache(cache);
-      fillReviewRhythm(body.parentElement, data);
+      re.disabled = true;
+      re.textContent = '刷新中…';
+      if (opt.onRefresh) opt.onRefresh();
     };
-    body.appendChild(re);
+    bar.appendChild(re);
+    body.appendChild(bar);
   }
 
-  async function fillReviewRhythm(sec, data) {
+  async function silentRefresh(sec, data) {
+    const wid = data.wid;
+    if (REV_RUNNING[wid]) return;
+    REV_RUNNING[wid] = 1;
+    try {
+      const g = await grabReviews(wid, data.reviews, null);
+      const c2 = buildRevCache(g, data);
+      const cc = loadRevCache();
+      cc[wid] = c2;
+      saveRevCache(cc);
+      const body = sec.querySelector('[data-rh]');
+      if (body && body.isConnected) {
+        renderRhythm(body, data, c2, {
+          stale: false,
+          onRefresh: function () {
+            const c3 = loadRevCache();
+            delete c3[wid];
+            saveRevCache(c3);
+            fillReviewRhythm(sec, data, { force: true });
+          }
+        });
+      }
+      recordRevSnapshot(data, c2);
+    } catch (e) {
+    } finally {
+      delete REV_RUNNING[wid];
+    }
+  }
+
+  async function fillReviewRhythm(sec, data, opt) {
     if (!sec || !data || !data.wid) return;
+    opt = opt || {};
+    const wid = data.wid;
     const body = sec.querySelector('[data-rh]');
     if (!body) return;
-
-    const wid = data.wid;
-    const cache = loadRevCache();
-    const c = cache[wid];
-    const fresh = c && c.v === REV_CACHE_VER && c.date &&
-      (Date.now() - new Date(c.date + 'T00:00:00').getTime()) < 24 * 3600 * 1000 &&
-      c.points && c.points.length;
-
-    if (fresh) { renderRhythm(body, data, c); return; }
 
     if (data.reviews === 0) {
       body.innerHTML = '';
@@ -1185,6 +1271,23 @@
       return;
     }
 
+    const onRefresh = function () {
+      const cc = loadRevCache();
+      delete cc[wid];
+      saveRevCache(cc);
+      fillReviewRhythm(sec, data, { force: true });
+    };
+
+    // ① 有缓存：立刻出图，过期的话后台静默换新数据
+    const cached = loadRevCache()[wid];
+    if (revHasCache(cached) && !opt.force) {
+      const fresh = revFresh(cached);
+      renderRhythm(body, data, cached, { stale: !fresh, onRefresh: onRefresh });
+      if (!fresh) silentRefresh(sec, data);
+      return;
+    }
+
+    // ② 无缓存 / 强制刷新：显示进度并开抓
     const plan = planPages(data.reviews);
     body.innerHTML = '';
     body.appendChild(row('评论总数', (data.reviews === null || data.reviews === undefined) ? '—' : data.reviews + ' 条', 'muted'));
@@ -1203,11 +1306,9 @@
     async function run() {
       if (busy) return;
       if (REV_RUNNING[wid]) { st.textContent = '另一页面正在抓取同一商品，稍后自动刷新'; return; }
-      // 面板可能被重复渲染，进队列后先复查缓存，避免重复发请求
-      const nowC = loadRevCache()[wid];
-      if (nowC && nowC.v === REV_CACHE_VER && nowC.date === todayStr() && nowC.points && nowC.points.length) {
-        renderRhythm(body, data, nowC);
-        return;
+      if (!opt.force) {
+        const nc = loadRevCache()[wid];
+        if (revFresh(nc)) { renderRhythm(body, data, nc, { stale: false, onRefresh: onRefresh }); return; }
       }
       busy = true;
       REV_RUNNING[wid] = 1;
@@ -1217,32 +1318,12 @@
         const g = await grabReviews(wid, data.reviews, function (i, n) {
           st.textContent = '正在回溯评论历史 ' + i + '/' + n + '…';
         });
-        const c2 = {
-          v: REV_CACHE_VER,
-          date: todayStr(),
-          total: (g.total === null || g.total === undefined) ? data.reviews : g.total,
-          withText: g.withText,
-          full: g.full,
-          pages: g.pages,
-          pageTotal: g.pageTotal,
-          points: g.points.map(function (p) { return { k: p.k, n: p.n, d: todayStr(p.d), i: p.i ? 1 : 0 }; })
-        };
-        const fresh2 = loadRevCache();
-        fresh2[wid] = c2;
-        saveRevCache(fresh2);
-        renderRhythm(body, data, c2);
-        try {
-          const pts = c2.points.map(function (p) { return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i }; });
-          const cum = makeCum(pts, c2.total);
-          const d30 = new Date(Date.now() - 30 * 864e5);
-          const last30 = Math.max(0, Math.round(cum(d30)));
-          const latest = pts.reduce(function (a, p) { return p.d > a ? p.d : a; }, pts[0].d);
-          record(Object.assign({}, data, {
-            latestReview: todayStr(latest),
-            reviewDaysSince: Math.round(daysAgo(latest)),
-            reviewLast30: last30
-          }));
-        } catch (e) { }
+        const c2 = buildRevCache(g, data);
+        const cc = loadRevCache();
+        cc[wid] = c2;
+        saveRevCache(cc);
+        renderRhythm(body, data, c2, { stale: false, onRefresh: onRefresh });
+        recordRevSnapshot(data, c2);
       } catch (e) {
         st.textContent = '评论历史取不到：' + String((e && e.message) || e).slice(0, 24);
         btn.textContent = '重试';
@@ -1258,7 +1339,6 @@
     // 打开页面即自动抓取；延迟 700ms 让商品页自身的请求先跑完
     setTimeout(run, 700);
   }
-
   /* ---------------- 主流程 ---------------- */
   let lastUrl = '';
 
