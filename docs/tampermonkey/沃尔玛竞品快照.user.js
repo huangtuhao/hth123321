@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         沃尔玛竞品快照
 // @namespace    https://local.wm-snapshot
-// @version      0.5.0
-// @description  沃尔玛竞品快照：详情页面板（嵌入页面，含评论节奏）、搜索页竞争汇总与卡片标注；本地累积历史，可导出 CSV
+// @version      0.6.0
+// @description  沃尔玛竞品快照：详情页面板（嵌入页面，含 24 个月评论频率图）、搜索页竞争汇总与卡片标注；本地累积历史，可导出 CSV
 // @author       local
 // @match        https://www.walmart.com/ip/*
 // @match        https://www.walmart.com/search*
@@ -23,7 +23,7 @@
   const PANEL_ID = 'wm-snapshot-host';
   const MAX_RECORDS = 8000;
   // 面板上显示版本号：截图即可确认浏览器里跑的是哪一版
-  const VER = '0.5.0';
+  const VER = '0.6.0';
 
   /* ---------------- 存储 ---------------- */
   function hasGM() {
@@ -885,9 +885,132 @@
     } catch (e) { }
   }
 
-  async function fetchReviews(wid, sort) {
-    const url = '/reviews/product/' + wid + '?page=1&sort=' + sort;
+
+  /* ================= 评论频率图（24 个月 · 抽样回溯） ================= */
+  const REV_MONTHS = 24;
+  const REV_CACHE_VER = 2;
+
+  function ymOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function lastMonths(n) {
+    const out = [];
+    const now = new Date();
+    for (let i = n - 1; i >= 0; i--) {
+      const s = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const e = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      out.push({ ym: ymOf(s), start: s, end: e, cur: i === 0 });
+    }
+    return out;
+  }
+
+  function niceStep(x) {
+    const p = Math.pow(10, Math.floor(Math.log10(x)));
+    const f = x / p;
+    const m = f <= 1 ? 1 : (f <= 2 ? 2 : (f <= 2.5 ? 2.5 : (f <= 5 ? 5 : 10)));
+    return m * p;
+  }
+
+  // 4 段刻度：既不让柱子顶到天花板，也不浪费一半高度
+  function niceScale(maxV) {
+    const v = Math.max(1, maxV);
+    const step = niceStep(v / 4);
+    let yMax = step * 4;
+    while (yMax < v) yMax += step;
+    return yMax;
+  }
+
+  // C(t) = 日期晚于 t 的评论条数。抽样点之间线性插值，两端用总数/0 封口。
+  function makeCum(points, total) {
+    const pts = points.slice().sort(function (a, b) { return b.d - a.d; });
+    return function (t) {
+      if (!pts.length) return 0;
+      if (t >= pts[0].d) return 0;
+      const last = pts[pts.length - 1];
+      if (t <= last.d) return (total === null || total === undefined) ? Math.max(0, last.n - 1) : total;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if (t <= a.d && t >= b.d) {
+          const span = a.d.getTime() - b.d.getTime();
+          if (span <= 0) return Math.max(0, a.n - 1);
+          const f = (a.d.getTime() - t.getTime()) / span;
+          return (a.n - 1) + ((b.n - 1) - (a.n - 1)) * f;
+        }
+      }
+      return (total === null || total === undefined) ? Math.max(0, last.n - 1) : total;
+    };
+  }
+
+  function buildSeries(points, total, full) {
+    const cum = makeCum(points, total);
+    return lastMonths(REV_MONTHS).map(function (m) {
+      const inM = points.filter(function (p) { return p.d >= m.start && p.d < m.end; });
+      let v = full ? inM.length : Math.max(0, Math.round(cum(m.start) - cum(m.end)));
+      let inc;
+      if (full) {
+        inc = inM.filter(function (p) { return p.i; }).length;
+      } else {
+        inc = inM.length ? Math.round(v * (inM.filter(function (p) { return p.i; }).length / inM.length)) : 0;
+      }
+      inc = Math.min(inc, v);
+      return { ym: m.ym, cur: m.cur, total: v, inc: inc, org: v - inc };
+    });
+  }
+
+  function freqSvg(series) {
+    const W = 360, H = 162, padL = 26, padR = 6, padT = 12, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const n = series.length;
+    const slot = plotW / n;
+    const barW = Math.max(6, Math.min(11, slot - 4));
+    const yMax = niceScale(Math.max.apply(null, series.map(function (s) { return s.total; }).concat([1])));
+    const hist = series.filter(function (s) { return !s.cur; });
+    const avg = hist.length ? hist.reduce(function (a, s) { return a + s.total; }, 0) / hist.length : 0;
+    const baseY = padT + plotH;
+    const y = function (v) { return baseY - plotH * (v / yMax); };
+    let g = '';
+
+    [0, yMax / 2, yMax].forEach(function (v) {
+      const yy = y(v);
+      g += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="#f0f0f0" stroke-width="1"/>';
+      g += '<text x="' + (padL - 4) + '" y="' + (yy + 3).toFixed(1) + '" font-size="8.5" fill="#a8a8a8" text-anchor="end">' + Math.round(v) + '</text>';
+    });
+
+    series.forEach(function (s, i) {
+      const x = padL + slot * i + (slot - barW) / 2;
+      const hAll = plotH * (s.total / yMax);
+      const hInc = plotH * (s.inc / yMax);
+      const hOrg = Math.max(0, hAll - hInc);
+      const op = s.cur ? 0.5 : 1;
+      const tip = s.ym + ' · ' + s.total + ' 条' + (s.inc ? '（激励 ' + s.inc + '）' : '') + (s.cur ? ' · 当月未走完' : '');
+      g += '<g><title>' + tip + '</title>';
+      if (s.org > 0) {
+        g += '<rect x="' + x.toFixed(1) + '" y="' + (baseY - hOrg).toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + hOrg.toFixed(1) + '" fill="#378ADD" opacity="' + op + '"/>';
+      }
+      if (s.inc > 0) {
+        g += '<rect x="' + x.toFixed(1) + '" y="' + (baseY - hAll).toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + hInc.toFixed(1) + '" fill="#EF9F27" opacity="' + op + '"/>';
+      }
+      g += '</g>';
+      if (i % 3 === 0) {
+        g += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (baseY + 13) + '" font-size="8.5" fill="#a8a8a8" text-anchor="middle">' + s.ym.slice(2).replace('-', '/') + '</text>';
+      }
+    });
+
+    if (avg > 0) {
+      const yy = y(avg).toFixed(1);
+      g += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" stroke="#A32D2D" stroke-width="1" stroke-dasharray="3 2"/>';
+    }
+    g += '<line x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '" stroke="#dcdcdc" stroke-width="1"/>';
+
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="近 24 个月每月新增评论数，蓝色为自然评论，橙色为激励评论">' +
+      '<title>近 24 个月评论频率</title>' + g + '</svg>';
+  }
+
+  async function fetchReviewPage(wid, page) {
+    const url = '/reviews/product/' + wid + '?page=' + page + '&sort=submission-desc';
     const res = await fetch(url, { credentials: 'include', headers: { accept: 'text/html' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const html = await res.text();
     const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
     if (!m) throw new Error('评论页未返回数据');
@@ -896,164 +1019,201 @@
     const dd = pp && pp.initialData ? pp.initialData.data : null;
     const rr = dd ? dd.reviews : null;
     const list = (rr && Array.isArray(rr.customerReviews)) ? rr.customerReviews : [];
-    const dates = list.map(function (x) { return parseUsDate(x.reviewSubmissionTime); })
-      .filter(function (d) { return d && !isNaN(d.getTime()); });
-    let inc = 0;
-    list.forEach(function (x) {
-      const hit = (x.badges || []).some(function (b) {
-        if (!b) return false;
-        const g = b.glassBadge || {};
-        return /incentiv/i.test(String(b.id || '')) || /incentiv/i.test(String(g.id || '')) || /incentiv/i.test(String(g.text || ''));
+    const pts = [];
+    list.forEach(function (x, idx) {
+      const d = parseUsDate(x.reviewSubmissionTime);
+      if (!d || isNaN(d.getTime())) return;
+      let inc = false;
+      (x.badges || []).forEach(function (b) {
+        if (!b) return;
+        const gg = b.glassBadge || {};
+        if (/incentiv/i.test(String(b.id || '')) || /incentiv/i.test(String(gg.id || '')) || /incentiv/i.test(String(gg.text || ''))) inc = true;
       });
-      if (hit) inc++;
+      pts.push({ k: String(x.reviewId || x.id || (page + ':' + idx)), n: (page - 1) * 10 + idx + 1, d: d, i: inc });
     });
-    return {
-      dates: dates,
-      count: list.length,
-      total: rr ? rr.totalReviewCount : null,
-      withText: rr ? rr.reviewsWithTextCount : null,
-      incentivized: inc
-    };
+    return { pts: pts, total: rr ? rr.totalReviewCount : null, withText: rr ? rr.reviewsWithTextCount : null };
   }
 
-  function buildTimeline(dates) {
-    if (!dates || dates.length < 2) return null;
-    const ds = dates.slice().sort(function (a, b) { return a - b; });
-    const a = ds[0].getTime();
-    const b = ds[ds.length - 1].getTime();
-    const span = b - a;
-    if (span <= 0) return null;
-    const wrap = el('div', 'tl');
-    wrap.appendChild(el('div', 'ax'));
-    ds.forEach(function (d) {
-      const dot = el('div', 'dt');
-      dot.style.left = ((d.getTime() - a) / span * 100).toFixed(2) + '%';
-      wrap.appendChild(dot);
-    });
-    return wrap;
+  function planPages(total) {
+    const pages = Math.max(1, Math.min(100, Math.ceil((total || 10) / 10)));
+    if (pages <= 9) {
+      const t = [];
+      for (let p = 1; p <= pages; p++) t.push(p);
+      return { targets: t, full: true, pageTotal: pages };
+    }
+    const t = [1];
+    for (let i = 1; i <= 8; i++) {
+      const p = Math.min(pages, Math.max(2, Math.round(i * pages / 8)));
+      if (t.indexOf(p) < 0) t.push(p);
+    }
+    t.sort(function (a, b) { return a - b; });
+    return { targets: t, full: false, pageTotal: pages };
+  }
+
+  async function grabReviews(wid, total, onProgress) {
+    const plan = planPages(total);
+    const seen = {}, pts = [];
+    let totalR = total, withText = null;
+    for (let i = 0; i < plan.targets.length; i++) {
+      if (onProgress) onProgress(i + 1, plan.targets.length);
+      try {
+        const r = await fetchReviewPage(wid, plan.targets[i]);
+        if (r.total !== null && r.total !== undefined) totalR = r.total;
+        if (r.withText !== null && r.withText !== undefined) withText = r.withText;
+        r.pts.forEach(function (p) {
+          if (seen[p.k]) return;
+          seen[p.k] = 1;
+          pts.push(p);
+        });
+      } catch (e) {
+        if (i === 0) throw e;
+      }
+      await new Promise(function (r) { setTimeout(r, 240); });
+    }
+    pts.sort(function (a, b) { return a.n - b.n; });
+    return { points: pts, total: totalR, withText: withText, full: plan.full, pages: plan.targets.length, pageTotal: plan.pageTotal };
   }
 
   function reviewSection() {
     const sec = el('div', 'sec');
-    sec.appendChild(el('div', 'sec-h', '评论节奏'));
+    sec.appendChild(el('div', 'sec-h', '评论频率'));
     const body = el('div');
     body.setAttribute('data-rh', '1');
-    body.appendChild(row('状态', '计算中…', 'muted'));
+    body.appendChild(row('状态', '未加载', 'muted'));
     sec.appendChild(body);
     return sec;
+  }
+
+  function renderRhythm(body, data, c) {
+    const pts = (c.points || []).map(function (p) {
+      return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i };
+    }).filter(function (p) { return !isNaN(p.d.getTime()); });
+
+    body.innerHTML = '';
+    if (!pts.length) {
+      body.appendChild(row('评论', '取不到评论日期', 'muted'));
+      return;
+    }
+
+    const series = buildSeries(pts, c.total, c.full);
+    const latest = pts.reduce(function (a, p) { return p.d > a ? p.d : a; }, pts[0].d);
+    const dsl = Math.round(daysAgo(latest));
+    const cum = makeCum(pts, c.total);
+    const now = new Date();
+    const d30 = new Date(now.getTime() - 30 * 864e5);
+    const d60 = new Date(now.getTime() - 60 * 864e5);
+    const last30 = Math.max(0, Math.round(cum(d30)));
+    const prev30 = Math.max(0, Math.round(cum(d60) - cum(d30)));
+    const mom = prev30 > 0 ? Math.round((last30 - prev30) / prev30 * 100) : null;
+    const hist = series.filter(function (s) { return !s.cur; });
+    const avg = hist.length ? hist.reduce(function (a, s) { return a + s.total; }, 0) / hist.length : 0;
+    const avg1 = Math.round(avg * 10) / 10;
+
+    let st = '平稳', cls = null;
+    if (dsl > 30) { st = '沉寂'; cls = 'warn'; }
+    else if (avg > 0 && last30 >= avg * 1.15) { st = '活跃'; cls = 'good'; }
+    else if (avg > 0 && last30 <= avg * 0.7) { st = '衰退'; cls = 'warn'; }
+
+    body.appendChild(row('状态', st, cls));
+    body.appendChild(row('最新评论', dsl <= 0 ? '今天' : dsl + ' 天前', dsl > 30 ? 'warn' : 'good'));
+    body.appendChild(row('近 30 天', last30 + ' 条'));
+    body.appendChild(row('月均（近 24 月）', avg1 + ' 条', 'muted'));
+    if (mom !== null) body.appendChild(row('环比上月', (mom > 0 ? '+' : '') + mom + '%', mom < 0 ? 'warn' : 'good'));
+
+    const chart = document.createElement('div');
+    chart.style.cssText = 'margin:9px 0 3px';
+    chart.innerHTML = freqSvg(series);
+    body.appendChild(chart);
+
+    const lg = document.createElement('div');
+    lg.style.cssText = 'display:flex;gap:12px;font-size:10.5px;color:#8a8a8a;flex-wrap:wrap';
+    lg.innerHTML =
+      '<span><i style="display:inline-block;width:8px;height:8px;background:#378ADD;border-radius:1px;margin-right:3px"></i>自然</span>' +
+      '<span><i style="display:inline-block;width:8px;height:8px;background:#EF9F27;border-radius:1px;margin-right:3px"></i>激励</span>' +
+      '<span><i style="display:inline-block;width:12px;border-top:1px dashed #A32D2D;vertical-align:middle;margin-right:3px"></i>月均 ' + avg1 + '</span>';
+    body.appendChild(lg);
+
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:10.5px;color:#9a9a9a;line-height:1.6;margin-top:5px';
+    note.textContent = '已抓 ' + pts.length + ' / ' + (c.total === null || c.total === undefined ? '?' : c.total) + ' 条（' +
+      (c.full ? '全量' : '抽样 ' + c.pages + ' 页') + '）' +
+      (c.full ? '' : '，月度值为插值估算') + ' · ' + String(c.date || '').slice(5);
+    body.appendChild(note);
+
+    const re = document.createElement('button');
+    re.textContent = '重新抓取';
+    re.style.cssText = 'margin-top:7px;width:100%;font:inherit;font-size:11.5px;padding:5px;border-radius:6px;border:0.5px solid #cfcfcf;background:#fff;color:#666;cursor:pointer';
+    re.onclick = function () {
+      const cache = loadRevCache();
+      delete cache[data.wid];
+      saveRevCache(cache);
+      fillReviewRhythm(body.parentElement, data);
+    };
+    body.appendChild(re);
   }
 
   async function fillReviewRhythm(sec, data) {
     if (!sec || !data || !data.wid) return;
     const body = sec.querySelector('[data-rh]');
     if (!body) return;
+
     const wid = data.wid;
-    const today = todayStr();
     const cache = loadRevCache();
-    let c = cache[wid];
+    const c = cache[wid];
+    const fresh = c && c.v === REV_CACHE_VER && c.date &&
+      (Date.now() - new Date(c.date + 'T00:00:00').getTime()) < 24 * 3600 * 1000 &&
+      c.points && c.points.length;
 
-    if (!c || c.date !== today) {
-      try {
-        const r = await fetchReviews(wid, 'submission-desc');
-        c = {
-          date: today,
-          total: r.total,
-          withText: r.withText,
-          inc: r.incentivized,
-          count: r.count,
-          dates: r.dates.map(function (d) { return todayStr(d); })
-        };
-        cache[wid] = c;
-        saveRevCache(cache);
-      } catch (e) {
-        body.innerHTML = '';
-        body.appendChild(row('评论数据', '取不到（' + String((e && e.message) || e).slice(0, 20) + '）', 'muted'));
-        return;
-      }
-    }
+    if (fresh) { renderRhythm(body, data, c); return; }
 
-    const dates = (c.dates || []).map(function (s) { return new Date(s + 'T00:00:00'); })
-      .filter(function (d) { return !isNaN(d.getTime()); });
-    if (!dates.length) {
-      body.innerHTML = '';
-      body.appendChild(row('评论', '暂无文字评论', 'muted'));
-      return;
-    }
-
-    const latest = dates.reduce(function (x, y) { return x > y ? x : y; });
-    const dsl = Math.round(daysAgo(latest));
-    const sortedAsc = dates.slice().sort(function (x, y) { return x - y; });
-    const tenth = sortedAsc[0];
-    const recentSpan = Math.round(daysAgo(tenth));
-    const recentRate = recentSpan > 0 ? Math.round((dates.length / recentSpan) * 30 * 10) / 10 : null;
-
+    const plan = planPages(data.reviews);
     body.innerHTML = '';
-    body.appendChild(row('最新评论', dsl <= 0 ? '今天' : dsl + ' 天前', dsl > 30 ? 'warn' : 'good'));
+    body.appendChild(row('评论总数', (data.reviews === null || data.reviews === undefined) ? '—' : data.reviews + ' 条', 'muted'));
 
-    let lvl = '活跃', cls = 'good';
-    if (dsl > 30) { lvl = '沉寂'; cls = 'warn'; }
-    else if (dsl > 7) { lvl = '一般'; cls = null; }
-    body.appendChild(row('活跃度', lvl, cls));
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10.5px;color:#9a9a9a;line-height:1.6;margin-top:4px';
+    hint.textContent = '按评论页倒序回溯，共 ' + plan.targets.length + ' 次请求；同一商品 24 小时内不重复抓取。';
+    body.appendChild(hint);
 
-    if (recentRate !== null) {
-      body.appendChild(row('近期速率', recentRate + ' 条/月'));
-      body.appendChild(row('统计窗口', dates.length + ' 条 / ' + recentSpan + ' 天', 'muted'));
-    }
-
-    const totalForDenom = c.withText || c.total || dates.length;
-    body.appendChild(row('评论总数', (c.total === null ? '—' : c.total) + '（文字 ' + (c.withText === null ? '—' : c.withText) + '）', 'muted'));
-
-    if (c.inc > 0) {
-      const pct = Math.round(c.inc / Math.max(c.count || dates.length, 1) * 100);
-      body.appendChild(row('激励评论', c.inc + ' 条 / ' + (c.count || dates.length) + '（' + pct + '%）', pct >= 30 ? 'warn' : null));
-    }
-
-    const tl = buildTimeline(dates);
-    if (tl) body.appendChild(tl);
-
-    if (!sec.getAttribute('data-life')) {
-      const btn = document.createElement('button');
-      btn.textContent = '算全周期';
-      btn.style.cssText = 'margin-top:8px;width:100%;font:inherit;font-size:12px;padding:5px;border-radius:6px;border:0.5px solid #cfcfcf;background:#fff;cursor:pointer';
-      btn.onclick = async function () {
-        btn.textContent = '计算中…';
-        btn.disabled = true;
+    const btn = document.createElement('button');
+    btn.textContent = '生成评论频率图';
+    btn.style.cssText = 'margin-top:8px;width:100%;font:inherit;font-size:12px;padding:6px;border-radius:6px;border:1px solid #0071dc;color:#0071dc;background:#fff;cursor:pointer';
+    btn.onclick = async function () {
+      btn.disabled = true;
+      btn.textContent = '抓取中 0/' + plan.targets.length;
+      try {
+        const g = await grabReviews(wid, data.reviews, function (i, n) { btn.textContent = '抓取中 ' + i + '/' + n; });
+        const c2 = {
+          v: REV_CACHE_VER,
+          date: todayStr(),
+          total: (g.total === null || g.total === undefined) ? data.reviews : g.total,
+          withText: g.withText,
+          full: g.full,
+          pages: g.pages,
+          pageTotal: g.pageTotal,
+          points: g.points.map(function (p) { return { k: p.k, n: p.n, d: todayStr(p.d), i: p.i ? 1 : 0 }; })
+        };
+        cache[wid] = c2;
+        saveRevCache(cache);
+        renderRhythm(body, data, c2);
         try {
-          const r2 = await fetchReviews(wid, 'submission-asc');
-          const oldest = r2.dates.reduce(function (x, y) { return x < y ? x : y; }, r2.dates[0]);
-          if (!oldest) throw new Error('无最早日期');
-          const span = (latest.getTime() - oldest.getTime()) / 86400000;
-          const total = c.total || r2.total;
-          sec.setAttribute('data-life', '1');
-          btn.remove();
-          if (total && total > 1 && span > 0) {
-            const lifeRate = Math.round(((total - 1) / span) * 30 * 10) / 10;
-            body.appendChild(row('全周期速率', lifeRate + ' 条/月'));
-            body.appendChild(row('全周期跨度', Math.round(span) + ' 天', 'muted'));
-            if (recentRate !== null && lifeRate > 0) {
-              const mult = Math.round((recentRate / lifeRate) * 100) / 100;
-              const tag = mult >= 1.4 ? '在加速 ' + mult + '×' : (mult <= 0.7 ? '在放缓 ' + mult + '×' : '节奏平稳');
-              body.appendChild(row('对比', tag, mult >= 1.4 ? 'good' : (mult <= 0.7 ? 'warn' : null)));
-            }
-            try {
-              const enriched = Object.assign({}, data, {
-                latestReview: todayStr(latest),
-                reviewDaysSince: dsl,
-                reviewRateRecent: recentRate,
-                reviewRateLife: lifeRate
-              });
-              record(enriched);
-            } catch (e) { }
-          } else {
-            body.appendChild(row('全周期速率', '样本不足', 'muted'));
-          }
-        } catch (e) {
-          btn.textContent = '算全周期（失败，重试）';
-          btn.disabled = false;
-        }
-      };
-      body.appendChild(btn);
-    }
+          const pts = c2.points.map(function (p) { return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i }; });
+          const cum = makeCum(pts, c2.total);
+          const d30 = new Date(Date.now() - 30 * 864e5);
+          const last30 = Math.max(0, Math.round(cum(d30)));
+          const latest = pts.reduce(function (a, p) { return p.d > a ? p.d : a; }, pts[0].d);
+          record(Object.assign({}, data, {
+            latestReview: todayStr(latest),
+            reviewDaysSince: Math.round(daysAgo(latest)),
+            reviewLast30: last30
+          }));
+        } catch (e) { }
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = '抓取失败，点此重试';
+      }
+    };
+    body.appendChild(btn);
   }
 
   /* ---------------- 主流程 ---------------- */
