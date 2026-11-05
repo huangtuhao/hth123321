@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         沃尔玛竞品快照
 // @namespace    https://local.wm-snapshot
-// @version      0.6.0
+// @version      0.7.0
 // @description  沃尔玛竞品快照：详情页面板（嵌入页面，含 24 个月评论频率图）、搜索页竞争汇总与卡片标注；本地累积历史，可导出 CSV
 // @author       local
 // @match        https://www.walmart.com/ip/*
@@ -23,7 +23,7 @@
   const PANEL_ID = 'wm-snapshot-host';
   const MAX_RECORDS = 8000;
   // 面板上显示版本号：截图即可确认浏览器里跑的是哪一版
-  const VER = '0.6.0';
+  const VER = '0.7.0';
 
   /* ---------------- 存储 ---------------- */
   function hasGM() {
@@ -889,6 +889,23 @@
   /* ================= 评论频率图（24 个月 · 抽样回溯） ================= */
   const REV_MONTHS = 24;
   const REV_CACHE_VER = 2;
+  // 同一商品多标签页同时抓会重复请求，用内存表互斥
+  const REV_RUNNING = {};
+
+  // 沃尔玛的激励评论标记（结构字段，不做文本猜测）：
+  //   badges[] = { badgeType:"Custom", id:"PrizeIncentive",
+  //                glassBadge:{ id:"IncentivizedReview", text:"Incentivized Review" } }
+  // 注意外层 id 叫 PrizeIncentive，不含 "incentiv"，只看 glassBadge 会漏判
+  function isIncentiveBadge(b) {
+    if (!b) return false;
+    const gg = b.glassBadge || {};
+    const cand = [b.id, gg.id, gg.text, b.text];
+    for (let i = 0; i < cand.length; i++) {
+      const s = String(cand[i] || '');
+      if (/incentiv/i.test(s) || /prizeincentive/i.test(s)) return true;
+    }
+    return false;
+  }
 
   function ymOf(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -1024,11 +1041,7 @@
       const d = parseUsDate(x.reviewSubmissionTime);
       if (!d || isNaN(d.getTime())) return;
       let inc = false;
-      (x.badges || []).forEach(function (b) {
-        if (!b) return;
-        const gg = b.glassBadge || {};
-        if (/incentiv/i.test(String(b.id || '')) || /incentiv/i.test(String(gg.id || '')) || /incentiv/i.test(String(gg.text || ''))) inc = true;
-      });
+      (x.badges || []).forEach(function (b) { if (isIncentiveBadge(b)) inc = true; });
       pts.push({ k: String(x.reviewId || x.id || (page + ':' + idx)), n: (page - 1) * 10 + idx + 1, d: d, i: inc });
     });
     return { pts: pts, total: rr ? rr.totalReviewCount : null, withText: rr ? rr.reviewsWithTextCount : null };
@@ -1166,23 +1179,44 @@
 
     if (fresh) { renderRhythm(body, data, c); return; }
 
+    if (data.reviews === 0) {
+      body.innerHTML = '';
+      body.appendChild(row('评论', '暂无评论', 'muted'));
+      return;
+    }
+
     const plan = planPages(data.reviews);
     body.innerHTML = '';
     body.appendChild(row('评论总数', (data.reviews === null || data.reviews === undefined) ? '—' : data.reviews + ' 条', 'muted'));
 
-    const hint = document.createElement('div');
-    hint.style.cssText = 'font-size:10.5px;color:#9a9a9a;line-height:1.6;margin-top:4px';
-    hint.textContent = '按评论页倒序回溯，共 ' + plan.targets.length + ' 次请求；同一商品 24 小时内不重复抓取。';
-    body.appendChild(hint);
+    const st = document.createElement('div');
+    st.style.cssText = 'font-size:10.5px;color:#9a9a9a;line-height:1.6;margin-top:4px';
+    st.textContent = '正在回溯评论历史 0/' + plan.targets.length + '…';
+    body.appendChild(st);
 
     const btn = document.createElement('button');
-    btn.textContent = '生成评论频率图';
-    btn.style.cssText = 'margin-top:8px;width:100%;font:inherit;font-size:12px;padding:6px;border-radius:6px;border:1px solid #0071dc;color:#0071dc;background:#fff;cursor:pointer';
-    btn.onclick = async function () {
-      btn.disabled = true;
-      btn.textContent = '抓取中 0/' + plan.targets.length;
+    btn.style.cssText = 'display:none;margin-top:8px;width:100%;font:inherit;font-size:12px;padding:6px;border-radius:6px;border:1px solid #0071dc;color:#0071dc;background:#fff;cursor:pointer';
+    body.appendChild(btn);
+
+    let busy = false;
+
+    async function run() {
+      if (busy) return;
+      if (REV_RUNNING[wid]) { st.textContent = '另一页面正在抓取同一商品，稍后自动刷新'; return; }
+      // 面板可能被重复渲染，进队列后先复查缓存，避免重复发请求
+      const nowC = loadRevCache()[wid];
+      if (nowC && nowC.v === REV_CACHE_VER && nowC.date === todayStr() && nowC.points && nowC.points.length) {
+        renderRhythm(body, data, nowC);
+        return;
+      }
+      busy = true;
+      REV_RUNNING[wid] = 1;
+      btn.style.display = 'none';
+      st.textContent = '正在回溯评论历史 0/' + plan.targets.length + '…';
       try {
-        const g = await grabReviews(wid, data.reviews, function (i, n) { btn.textContent = '抓取中 ' + i + '/' + n; });
+        const g = await grabReviews(wid, data.reviews, function (i, n) {
+          st.textContent = '正在回溯评论历史 ' + i + '/' + n + '…';
+        });
         const c2 = {
           v: REV_CACHE_VER,
           date: todayStr(),
@@ -1193,8 +1227,9 @@
           pageTotal: g.pageTotal,
           points: g.points.map(function (p) { return { k: p.k, n: p.n, d: todayStr(p.d), i: p.i ? 1 : 0 }; })
         };
-        cache[wid] = c2;
-        saveRevCache(cache);
+        const fresh2 = loadRevCache();
+        fresh2[wid] = c2;
+        saveRevCache(fresh2);
         renderRhythm(body, data, c2);
         try {
           const pts = c2.points.map(function (p) { return { d: new Date(p.d + 'T00:00:00'), n: p.n, i: !!p.i }; });
@@ -1209,11 +1244,19 @@
           }));
         } catch (e) { }
       } catch (e) {
-        btn.disabled = false;
-        btn.textContent = '抓取失败，点此重试';
+        st.textContent = '评论历史取不到：' + String((e && e.message) || e).slice(0, 24);
+        btn.textContent = '重试';
+        btn.style.display = 'block';
+      } finally {
+        busy = false;
+        delete REV_RUNNING[wid];
       }
-    };
-    body.appendChild(btn);
+    }
+
+    btn.onclick = run;
+
+    // 打开页面即自动抓取；延迟 700ms 让商品页自身的请求先跑完
+    setTimeout(run, 700);
   }
 
   /* ---------------- 主流程 ---------------- */
